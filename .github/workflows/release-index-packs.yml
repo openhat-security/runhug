@@ -76,7 +76,7 @@ jobs:
 
       - name: Upload build artifacts (dispatch without tag)
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.tag == ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: index-packs
           path: dist/index/
