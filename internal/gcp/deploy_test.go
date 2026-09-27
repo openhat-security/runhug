@@ -52,6 +52,18 @@ func TestBuildPlanL4Default(t *testing.T) {
 	if !strings.Contains(joined, "--provisioning-model=SPOT") {
 		t.Fatal("expected SPOT")
 	}
+	if !strings.Contains(joined, "create-with-container") {
+		t.Fatal("expected create-with-container")
+	}
+	if !strings.Contains(joined, "cos-stable") {
+		t.Fatal("expected COS image family")
+	}
+	if !strings.Contains(joined, "--container-image=") {
+		t.Fatal("expected container image")
+	}
+	if !strings.Contains(joined, "no-address") {
+		t.Fatal("default must be no-address (Cloud NAT)")
+	}
 	if !strings.Contains(joined, "g2-standard-4") {
 		t.Fatal("expected L4 machine type")
 	}
@@ -60,6 +72,9 @@ func TestBuildPlanL4Default(t *testing.T) {
 	}
 	if !strings.Contains(plan.Dockerfile, "llama-server") {
 		t.Fatal("plan should carry Dockerfile")
+	}
+	if strings.Contains(plan.Startup, "cmake -B") || strings.Contains(plan.Startup, "git clone") {
+		t.Fatal("startup must not compile llama on the VM")
 	}
 	if !strings.HasPrefix(plan.Name, "runhug-") {
 		t.Fatalf("name=%s", plan.Name)
@@ -125,5 +140,22 @@ func TestInstanceName(t *testing.T) {
 	}
 	if strings.ContainsAny(got, "/! ") {
 		t.Fatal(got)
+	}
+}
+
+func TestBuildPlanPublicIP(t *testing.T) {
+	plan, err := BuildPlan(DeployRequest{
+		Project:        "p",
+		ModelID:        "org/m",
+		Bearer:         "rh_x",
+		ContainerImage: "us-docker.pkg.dev/p/runhug/llama-server:cuda12.4",
+		PublicIP:       true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(plan.CreateArgs, " ")
+	if strings.Contains(joined, "no-address") {
+		t.Fatal("public-ip dogfood must not set no-address")
 	}
 }

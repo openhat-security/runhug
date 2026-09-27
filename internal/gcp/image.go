@@ -1,7 +1,6 @@
 package gcp
 
 import (
-	"encoding/base64"
 	"fmt"
 	"strings"
 )
@@ -186,7 +185,16 @@ echo "$LAST_OK" >/tmp/runhug-last-request
     if [[ $((now - LAST_OK)) -ge "$IDLE_SECONDS" ]]; then
       echo "runhug: idle ${IDLE_SECONDS}s — stopping VM" >&2
       kill "$SERVER_PID" 2>/dev/null || true
-      if command -v shutdown >/dev/null 2>&1; then
+      # Prefer GCE Stop API (create-with-container; no host privileged shutdown needed).
+      META="http://metadata.google.internal/computeMetadata/v1"
+      TOK="$(curl -sf -H "Metadata-Flavor: Google" "$META/instance/service-accounts/default/token" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null || true)"
+      PROJ="$(curl -sf -H "Metadata-Flavor: Google" "$META/project/project-id" 2>/dev/null || true)"
+      ZONE="$(curl -sf -H "Metadata-Flavor: Google" "$META/instance/zone" 2>/dev/null | awk -F/ '{print $NF}' || true)"
+      NAME="$(curl -sf -H "Metadata-Flavor: Google" "$META/instance/name" 2>/dev/null || true)"
+      if [[ -n "$TOK" && -n "$PROJ" && -n "$ZONE" && -n "$NAME" ]]; then
+        curl -sf -X POST -H "Authorization: Bearer $TOK" \
+          "https://compute.googleapis.com/compute/v1/projects/${PROJ}/zones/${ZONE}/instances/${NAME}/stop" >/dev/null || true
+      elif command -v shutdown >/dev/null 2>&1; then
         shutdown -h now || poweroff || true
       else
         poweroff || true
@@ -201,72 +209,16 @@ wait "$SERVER_PID"
 `
 }
 
-// StartupScript is a GCE metadata startup-script that installs llama-server on
-// a Deep Learning / CUDA VM and runs the same entrypoint. Secrets come from
-// instance metadata only (never baked into a disk image).
+// StartupScript is retained for tests/docs but Phase 1 deploy uses
+// create-with-container (no first-boot compile). Prefer EntrypointScript inside
+// the prebuilt image. This stub only documents the soft locks.
 func StartupScript(cfg ImageConfig) string {
 	cfg = cfg.withDefaults()
-	epB64 := base64.StdEncoding.EncodeToString([]byte(EntrypointScript(cfg)))
-	modelLine := ""
-	if cfg.ModelID != "" {
-		modelLine = "export MODEL_ID=" + shellQuote(cfg.ModelID) + "\n"
-	}
-	ggufLine := ""
-	if cfg.GGUFFile != "" {
-		ggufLine = "export GGUF_FILE=" + shellQuote(cfg.GGUFFile) + "\n"
-	}
 	return `#!/usr/bin/env bash
-# runhug GCE startup — Spot GPU llama-server (no secrets in image templates).
-set -euo pipefail
-exec > >(tee -a /var/log/runhug-startup.log) 2>&1
-
-` + modelLine + ggufLine + `
-export HOST=127.0.0.1
-export PORT=` + fmt.Sprintf("%d", cfg.Port) + `
-export IDLE_SECONDS=` + fmt.Sprintf("%d", cfg.IdleSeconds) + `
-export CONTEXT=` + fmt.Sprintf("%d", cfg.Context) + `
-export NGL=` + fmt.Sprintf("%d", cfg.GPULayers) + `
-export MODEL_DIR=/var/lib/runhug/models
-mkdir -p "$MODEL_DIR" /opt/runhug
-
-export API_KEY="$(curl -sf -H "Metadata-Flavor: Google" \
-  http://metadata.google.internal/computeMetadata/v1/instance/attributes/runhug-api-key || true)"
-export HF_TOKEN="$(curl -sf -H "Metadata-Flavor: Google" \
-  http://metadata.google.internal/computeMetadata/v1/instance/attributes/runhug-hf-token || true)"
-export HUGGING_FACE_HUB_TOKEN="${HF_TOKEN:-}"
-
-if [[ -z "${MODEL_ID:-}" ]]; then
-  MODEL_ID="$(curl -sf -H "Metadata-Flavor: Google" \
-    http://metadata.google.internal/computeMetadata/v1/instance/attributes/runhug-model-id || true)"
-  export MODEL_ID
-fi
-if [[ -z "${GGUF_FILE:-}" ]]; then
-  GGUF_FILE="$(curl -sf -H "Metadata-Flavor: Google" \
-    http://metadata.google.internal/computeMetadata/v1/instance/attributes/runhug-gguf-file || true)"
-  export GGUF_FILE
-fi
-
-if ! command -v llama-server >/dev/null 2>&1; then
-  echo "runhug: installing llama-server …"
-  apt-get update -y
-  apt-get install -y --no-install-recommends curl ca-certificates python3 python3-pip git cmake build-essential iproute2
-  pip3 install --no-cache-dir "huggingface_hub[cli]"
-  cd /opt/runhug
-  if [[ ! -d llama.cpp ]]; then
-    git clone --depth 1 https://github.com/ggerganov/llama.cpp.git
-  fi
-  cd llama.cpp
-  cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
-  cmake --build build --config Release -j"$(nproc)" --target llama-server
-  install -m 755 build/bin/llama-server /usr/local/bin/llama-server
-fi
-command -v huggingface-cli >/dev/null 2>&1 || pip3 install --no-cache-dir "huggingface_hub[cli]"
-command -v ss >/dev/null 2>&1 || apt-get install -y --no-install-recommends iproute2
-
-echo '` + epB64 + `' | base64 -d >/opt/runhug/entrypoint.sh
-chmod +x /opt/runhug/entrypoint.sh
-date +%s >/tmp/runhug-last-request
-exec /opt/runhug/entrypoint.sh
+# Deprecated: runhug GCP deploy uses gcloud create-with-container + prebuilt image.
+# Soft locks: 127.0.0.1 + Bearer from metadata + stop-on-idle + IAP.
+echo "runhug: startup-script unused — container entrypoint owns the workload" >&2
+exit 0
 `
 }
 

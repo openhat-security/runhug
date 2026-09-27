@@ -21,22 +21,30 @@ type DeployRequest struct {
 	HFToken     string // optional; metadata-from-file only
 	Bearer      string // CLI-managed; metadata-from-file only
 	DryRun      bool
+	// ContainerImage is the prebuilt llama-server image (Artifact Registry / GCR).
+	// Required for live create; dry-run may use a printable placeholder.
+	ContainerImage string
+	// PublicIP adds an ephemeral external IP (dogfood egress). Default false =
+	// no-address (needs Cloud NAT for image pull / HF download).
+	PublicIP bool
 }
 
 // DeployPlan is the printable / executable plan.
 type DeployPlan struct {
-	Project     string      `json:"project"`
-	Zone        string      `json:"zone"`
-	Region      string      `json:"region"`
-	Name        string      `json:"name"`
-	ModelID     string      `json:"model_id"`
-	GGUFFile    string      `json:"gguf_file,omitempty"`
-	Target      GPUTarget   `json:"target"`
-	IdleSeconds int         `json:"idle_seconds"`
-	Image       ImageConfig `json:"image"`
-	Dockerfile  string      `json:"-"`
-	Entrypoint  string      `json:"-"`
-	Startup     string      `json:"-"`
+	Project        string      `json:"project"`
+	Zone           string      `json:"zone"`
+	Region         string      `json:"region"`
+	Name           string      `json:"name"`
+	ModelID        string      `json:"model_id"`
+	GGUFFile       string      `json:"gguf_file,omitempty"`
+	Target         GPUTarget   `json:"target"`
+	IdleSeconds    int         `json:"idle_seconds"`
+	Image          ImageConfig `json:"image"`
+	ContainerImage string      `json:"container_image"`
+	PublicIP       bool        `json:"public_ip"`
+	Dockerfile     string      `json:"-"`
+	Entrypoint     string      `json:"-"`
+	Startup        string      `json:"-"` // deprecated stub; create-with-container owns boot
 	// CreateArgs is safe to print (secrets redacted / placeholders).
 	CreateArgs   []string `json:"create_args"`
 	FirewallArgs []string `json:"firewall_args,omitempty"`
@@ -79,21 +87,29 @@ func BuildPlan(req DeployRequest) (*DeployPlan, error) {
 		return nil, fmt.Errorf("internal: Bearer required before BuildPlan (CLI GenerateBearer)")
 	}
 
+	containerImage := strings.TrimSpace(req.ContainerImage)
+	if containerImage == "" {
+		// Printable placeholder for dry-run; live Deploy rejects empty.
+		containerImage = fmt.Sprintf("%s-docker.pkg.dev/%s/runhug/llama-server:cuda12.4", DefaultRegion, req.Project)
+	}
+
 	plan := &DeployPlan{
-		Project:     req.Project,
-		Zone:        zone,
-		Region:      region,
-		Name:        name,
-		ModelID:     model,
-		GGUFFile:    img.GGUFFile,
-		Target:      target,
-		IdleSeconds: idle,
-		Image:       img,
-		Dockerfile:  Dockerfile(img),
-		Entrypoint:  EntrypointScript(img),
-		Startup:     StartupScript(img),
-		OpenAIHint:  fmt.Sprintf("http://127.0.0.1:%d/v1 (after IAP tunnel)", ServerPort),
-		TunnelHint:  fmt.Sprintf("runhug gcp tunnel %s --project %s --zone %s", name, req.Project, zone),
+		Project:        req.Project,
+		Zone:           zone,
+		Region:         region,
+		Name:           name,
+		ModelID:        model,
+		GGUFFile:       img.GGUFFile,
+		Target:         target,
+		IdleSeconds:    idle,
+		Image:          img,
+		ContainerImage: containerImage,
+		PublicIP:       req.PublicIP,
+		Dockerfile:     Dockerfile(img),
+		Entrypoint:     EntrypointScript(img),
+		Startup:        StartupScript(img),
+		OpenAIHint:     fmt.Sprintf("http://127.0.0.1:%d/v1 (after IAP tunnel)", ServerPort),
+		TunnelHint:     fmt.Sprintf("runhug gcp tunnel %s --project %s --zone %s", name, req.Project, zone),
 	}
 	plan.CreateArgs = buildCreateArgsPrintable(plan)
 	plan.FirewallArgs = buildFirewallArgs(plan.Project)
@@ -102,20 +118,29 @@ func BuildPlan(req DeployRequest) (*DeployPlan, error) {
 
 func buildCreateArgsPrintable(plan *DeployPlan) []string {
 	args := baseCreateArgs(plan)
-	meta := "runhug-model-id=" + plan.ModelID + ",runhug-idle-seconds=" + fmt.Sprintf("%d", plan.IdleSeconds)
+	meta := "runhug-model-id=" + plan.ModelID + ",runhug-idle-seconds=" + fmt.Sprintf("%d", plan.IdleSeconds) + ",install-nvidia-driver=True"
 	if plan.GGUFFile != "" {
 		meta += ",runhug-gguf-file=" + plan.GGUFFile
 	}
 	args = append(args,
 		"--metadata="+meta,
-		"--metadata-from-file=startup-script=<tmp>,runhug-api-key=<tmp-token>[,runhug-hf-token=<tmp>]",
+		"--metadata-from-file=runhug-api-key=<tmp-token>[,runhug-hf-token=<tmp>]",
 	)
 	return args
 }
 
+// baseCreateArgs builds gcloud create-with-container (COS + prebuilt image).
+// Soft default: no public IP (Cloud NAT required). Dogfood may set PublicIP.
 func baseCreateArgs(plan *DeployPlan) []string {
+	env := fmt.Sprintf(
+		"HOST=127.0.0.1,PORT=%d,IDLE_SECONDS=%d,CONTEXT=%d,NGL=-1,MODEL_ID=%s",
+		ServerPort, plan.IdleSeconds, plan.Image.withDefaults().Context, plan.ModelID,
+	)
+	if plan.GGUFFile != "" {
+		env += ",GGUF_FILE=" + plan.GGUFFile
+	}
 	args := []string{
-		"compute", "instances", "create", plan.Name,
+		"compute", "instances", "create-with-container", plan.Name,
 		"--project=" + plan.Project,
 		"--zone=" + plan.Zone,
 		"--machine-type=" + plan.Target.MachineType,
@@ -123,11 +148,17 @@ func baseCreateArgs(plan *DeployPlan) []string {
 		"--instance-termination-action=STOP",
 		"--maintenance-policy=TERMINATE",
 		fmt.Sprintf("--boot-disk-size=%dGB", plan.Target.DiskGB),
-		"--image-family=common-cu124-ubuntu-2204-nvidia-570",
-		"--image-project=deeplearning-platform-release",
+		"--image-family=cos-stable",
+		"--image-project=cos-cloud",
 		"--scopes=cloud-platform",
 		"--labels=runhug=1,runhug-provider=gcp",
-		"--network-interface=no-address",
+		"--container-image=" + plan.ContainerImage,
+		"--container-restart-policy=never",
+		"--container-network=host",
+		"--container-env=" + env,
+	}
+	if !plan.PublicIP {
+		args = append(args, "--network-interface=no-address")
 	}
 	if plan.Target.Accelerator != "" {
 		args = append(args,
@@ -161,30 +192,23 @@ type DeployBundle struct {
 
 // Materialize writes startup + secret metadata files for gcloud.
 func Materialize(plan *DeployPlan, bearer, hfToken string) (*DeployBundle, error) {
-	startupPath, err := WriteTempFile("runhug-startup-*.sh", []byte(plan.Startup))
-	if err != nil {
-		return nil, err
-	}
+	// create-with-container: no startup-script; Bearer/HF via instance metadata only.
 	tokenPath, err := WriteTempFile("runhug-token-*.txt", []byte(bearer))
 	if err != nil {
-		_ = os.Remove(startupPath)
 		return nil, err
 	}
 	b := &DeployBundle{
-		StartupPath: startupPath,
-		TokenPath:   tokenPath,
+		TokenPath: tokenPath,
 	}
 	if strings.TrimSpace(hfToken) != "" {
 		hfPath, err := WriteTempFile("runhug-hf-*.txt", []byte(hfToken))
 		if err != nil {
-			_ = os.Remove(startupPath)
 			_ = os.Remove(tokenPath)
 			return nil, err
 		}
 		b.HFPath = hfPath
 	}
 	b.Cleanup = func() {
-		_ = os.Remove(b.StartupPath)
 		_ = os.Remove(b.TokenPath)
 		if b.HFPath != "" {
 			_ = os.Remove(b.HFPath)
@@ -195,11 +219,11 @@ func Materialize(plan *DeployPlan, bearer, hfToken string) (*DeployBundle, error
 
 func liveCreateArgs(plan *DeployPlan, bundle *DeployBundle) []string {
 	args := baseCreateArgs(plan)
-	meta := "runhug-model-id=" + plan.ModelID + ",runhug-idle-seconds=" + fmt.Sprintf("%d", plan.IdleSeconds)
+	meta := "runhug-model-id=" + plan.ModelID + ",runhug-idle-seconds=" + fmt.Sprintf("%d", plan.IdleSeconds) + ",install-nvidia-driver=True"
 	if plan.GGUFFile != "" {
 		meta += ",runhug-gguf-file=" + plan.GGUFFile
 	}
-	fromFile := "startup-script=" + bundle.StartupPath + ",runhug-api-key=" + bundle.TokenPath
+	fromFile := "runhug-api-key=" + bundle.TokenPath
 	if bundle.HFPath != "" {
 		fromFile += ",runhug-hf-token=" + bundle.HFPath
 	}
@@ -211,6 +235,9 @@ func liveCreateArgs(plan *DeployPlan, bundle *DeployBundle) []string {
 func (c *Client) Deploy(ctx context.Context, plan *DeployPlan, bearer, hfToken string, tryFallback bool) error {
 	if plan == nil {
 		return fmt.Errorf("nil plan")
+	}
+	if strings.TrimSpace(plan.ContainerImage) == "" {
+		return fmt.Errorf("container image required: pass --image (Artifact Registry) or build with: runhug gcp dockerfile --write-image ./img && docker build/push")
 	}
 	bundle, err := Materialize(plan, bearer, hfToken)
 	if err != nil {

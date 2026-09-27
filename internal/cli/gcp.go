@@ -47,12 +47,16 @@ func cmdGCP(args []string) error {
 func gcpHelpText() string {
 	return `usage: runhug gcp <command>
 
-Phase 1 GCP GPU provider (Spot L4, T4 fallback) serving llama.cpp llama-server.
+Phase 1 GCP GPU provider (Spot L4, T4 fallback) serving llama.cpp llama-server
+via gcloud create-with-container (COS + prebuilt Docker image — no first-boot compile).
 Auth is gcloud Application Default Credentials. OpenAI /v1 binds 127.0.0.1 on the
 VM; reach it with an IAP tunnel. Bearer is CLI-managed (never baked into the image).
 
+Default network is no public IP: image pull / HF download need Cloud NAT (or
+pass --public-ip for dogfood only). Always lead with stop-on-idle (default 600s).
+
 commands:
-  deploy [org/model]   pick project + GGUF model, create Spot VM + stop-on-idle
+  deploy [org/model]   pick project + GGUF model, create Spot container VM + stop-on-idle
   tunnel [name]        IAP tunnel → http://127.0.0.1:8080/v1
   status [name]        instance status
   stop [name]          stop the VM (preserves disk)
@@ -71,6 +75,8 @@ flags for deploy:
   --name <instance>    GCE instance name
   --gguf <file>        preferred .gguf filename in the repo
   --disk <gb>          boot disk (default 200)
+  --image <ref>        prebuilt container image (Artifact Registry / GCR); required for live create
+  --public-ip          dogfood: ephemeral external IP (default is no-address + Cloud NAT)
   --write-image <dir>  write Dockerfile + entrypoint.sh
   --opencode           merge project .opencode/opencode.json (no apiKey)
   --yes, --dry-run, --json
@@ -97,6 +103,8 @@ func cmdGCPDeploy(args []string) error {
 	doOpenCode := fs.Bool("opencode", false, "merge project .opencode/opencode.json (no apiKey)")
 	openCodeDir := fs.String("opencode-dir", ".", "project dir for .opencode/opencode.json")
 	noFallback := fs.Bool("no-fallback", false, "do not fall back from L4 to T4")
+	containerImage := fs.String("image", "", "prebuilt container image (Artifact Registry / GCR)")
+	publicIP := fs.Bool("public-ip", false, "dogfood: ephemeral external IP (default no-address + Cloud NAT)")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -177,19 +185,29 @@ func cmdGCPDeploy(args []string) error {
 		return err
 	}
 
+	imgRef := strings.TrimSpace(*containerImage)
+	if imgRef == "" {
+		imgRef = strings.TrimSpace(os.Getenv("RUNHUG_GCP_IMAGE"))
+	}
+	if imgRef == "" && !*dry {
+		return fmt.Errorf("live create needs a prebuilt image: pass --image REGION-docker.pkg.dev/PROJECT/runhug/llama-server:TAG (or set RUNHUG_GCP_IMAGE). Build with: runhug gcp dockerfile --write-image ./img && docker build/push. Dry-run works without --image.")
+	}
+
 	plan, err := gcp.BuildPlan(gcp.DeployRequest{
-		Project:     proj,
-		Zone:        *zone,
-		Region:      *region,
-		Name:        *name,
-		ModelID:     modelID,
-		GGUFFile:    ggufFile,
-		GPU:         *gpu,
-		IdleSeconds: *idle,
-		DiskGB:      *disk,
-		Bearer:      bearer,
-		HFToken:     env.HFToken,
-		DryRun:      *dry,
+		Project:        proj,
+		Zone:           *zone,
+		Region:         *region,
+		Name:           *name,
+		ModelID:        modelID,
+		GGUFFile:       ggufFile,
+		GPU:            *gpu,
+		IdleSeconds:    *idle,
+		DiskGB:         *disk,
+		Bearer:         bearer,
+		HFToken:        env.HFToken,
+		DryRun:         *dry,
+		ContainerImage: imgRef,
+		PublicIP:       *publicIP,
 	})
 	if err != nil {
 		return err
@@ -269,7 +287,7 @@ func cmdGCPDeploy(args []string) error {
 		GPUCount:  1,
 		BaseURL:   gcp.LocalOpenAIURL(gcp.ServerPort),
 		ServeName: modelID,
-		Image:     "llama-server (generated)",
+		Image:     plan.ContainerImage,
 		CreatedAt: time.Now().UTC(),
 		// Zone/project stashed in EndpointID / EndpointType for Phase 1 reuse.
 		EndpointID:   plan.Project,
@@ -385,6 +403,12 @@ func printGCPPlan(plan *gcp.DeployPlan, hasHF bool) {
 	printKV(os.Stdout, "gpu", fmt.Sprintf("%s (%s) — %s", plan.Target.Name, plan.Target.MachineType, plan.Target.Reason))
 	printKV(os.Stdout, "idle", fmt.Sprintf("%ds stop-on-idle", plan.IdleSeconds))
 	printKV(os.Stdout, "bind", "127.0.0.1:"+strconv.Itoa(gcp.ServerPort)+" + IAP tunnel")
+	printKV(os.Stdout, "container", plan.ContainerImage)
+	net := "no-address (need Cloud NAT)"
+	if plan.PublicIP {
+		net = "ephemeral external IP (dogfood)"
+	}
+	printKV(os.Stdout, "network", net)
 	printKV(os.Stdout, "auth", "gcloud ADC + CLI Bearer (not in image)")
 	if hasHF {
 		printKV(os.Stdout, "hf_token", "set (metadata-from-file, not printed)")

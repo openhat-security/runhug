@@ -31,7 +31,7 @@ func TestDockerfileNoSecrets(t *testing.T) {
 
 func TestEntrypointSoftLocks(t *testing.T) {
 	ep := EntrypointScript(ImageConfig{IdleSeconds: 120})
-	for _, want := range []string{"127.0.0.1", "--api-key", "IDLE_SECONDS", "shutdown", "runhug-api-key", "huggingface-cli"} {
+	for _, want := range []string{"127.0.0.1", "--api-key", "IDLE_SECONDS", "shutdown", "runhug-api-key", "huggingface-cli", "instances/", "/stop"} {
 		if !strings.Contains(ep, want) {
 			t.Fatalf("entrypoint missing %q", want)
 		}
@@ -42,13 +42,16 @@ func TestEntrypointSoftLocks(t *testing.T) {
 	}
 }
 
-func TestStartupEmbedsEntrypointBase64(t *testing.T) {
+func TestStartupDeprecatedNoCompile(t *testing.T) {
 	st := StartupScript(ImageConfig{ModelID: "org/model"})
-	if !strings.Contains(st, "base64 -d") {
-		t.Fatal("startup should decode entrypoint via base64")
+	if strings.Contains(st, "cmake -B") || strings.Contains(st, "git clone") {
+		t.Fatal("startup must not compile llama on the VM")
 	}
 	if strings.Contains(st, "BEGIN PRIVATE KEY") {
 		t.Fatal("startup must not contain SA keys")
+	}
+	if !strings.Contains(st, "create-with-container") {
+		t.Fatal("startup stub should point at create-with-container")
 	}
 }
 
