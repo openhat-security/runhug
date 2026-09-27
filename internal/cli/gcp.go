@@ -34,6 +34,8 @@ func cmdGCP(args []string) error {
 		return cmdGCPStatus(args[1:])
 	case "dockerfile", "image":
 		return cmdGCPDockerfile(args[1:])
+	case "push":
+		return cmdGCPPush(args[1:])
 	case "opencode":
 		return cmdGCPOpenCode(args[1:])
 	case "-h", "--help", "help":
@@ -48,20 +50,21 @@ func gcpHelpText() string {
 	return `usage: runhug gcp <command>
 
 Phase 1 GCP GPU provider (Spot L4, T4 fallback) serving llama.cpp llama-server
-via gcloud create-with-container (COS + prebuilt Docker image — no first-boot compile).
+via a Spot DLVM that docker-pulls a prebuilt image (cold start = pull + start).
 Auth is gcloud Application Default Credentials. OpenAI /v1 binds 127.0.0.1 on the
-VM; reach it with an IAP tunnel. Bearer is CLI-managed (never baked into the image).
+VM; reach it with an SSH local-forward tunnel (runhug gcp tunnel). Bearer is CLI-managed (never baked into the image).
 
 Default network is no public IP: image pull / HF download need Cloud NAT (or
 pass --public-ip for dogfood only). Always lead with stop-on-idle (default 600s).
 
 commands:
   deploy [org/model]   pick project + GGUF model, create Spot container VM + stop-on-idle
-  tunnel [name]        IAP tunnel → http://127.0.0.1:8080/v1
+  tunnel [name]        SSH local-forward → http://127.0.0.1:8080/v1 (guest binds loopback)
   status [name]        instance status
   stop [name]          stop the VM (preserves disk)
   delete [name]        delete the VM + registry entry
   dockerfile           print generated Dockerfile + entrypoint (stdout)
+  push                 local docker build --platform linux/amd64 + push to AR (no Cloud Build)
   opencode             emit/merge project .opencode/opencode.json (no apiKey)
 
 Also: runhug deploy --provider gcp <model>
@@ -80,6 +83,14 @@ flags for deploy:
   --write-image <dir>  write Dockerfile + entrypoint.sh
   --opencode           merge project .opencode/opencode.json (no apiKey)
   --yes, --dry-run, --json
+
+flags for push:
+  --image <ref>        destination tag (required), e.g. REGION-docker.pkg.dev/PROJECT/runhug/llama-server:cuda
+  --model <org/model>  optional MODEL_ID hint baked as ENV (not a secret)
+  --gguf <file>        optional GGUF filename hint
+  --dir <path>         write/build context (default: temp dir)
+  --platform <plat>    default linux/amd64
+  --dry-run            print docker build/push commands only
 
 soft locks: gcloud ADC · Bearer + 127.0.0.1 + IAP · stop-on-idle · OpenCode client-side only
 `
@@ -190,7 +201,7 @@ func cmdGCPDeploy(args []string) error {
 		imgRef = strings.TrimSpace(os.Getenv("RUNHUG_GCP_IMAGE"))
 	}
 	if imgRef == "" && !*dry {
-		return fmt.Errorf("live create needs a prebuilt image: pass --image REGION-docker.pkg.dev/PROJECT/runhug/llama-server:TAG (or set RUNHUG_GCP_IMAGE). Build with: runhug gcp dockerfile --write-image ./img && docker build/push. Dry-run works without --image.")
+		return fmt.Errorf("live create needs a prebuilt image: pass --image REGION-docker.pkg.dev/PROJECT/runhug/llama-server:TAG (or set RUNHUG_GCP_IMAGE). Build with: runhug gcp push --image <ref>. Dry-run works without --image.")
 	}
 
 	plan, err := gcp.BuildPlan(gcp.DeployRequest{
@@ -402,7 +413,7 @@ func printGCPPlan(plan *gcp.DeployPlan, hasHF bool) {
 	}
 	printKV(os.Stdout, "gpu", fmt.Sprintf("%s (%s) — %s", plan.Target.Name, plan.Target.MachineType, plan.Target.Reason))
 	printKV(os.Stdout, "idle", fmt.Sprintf("%ds stop-on-idle", plan.IdleSeconds))
-	printKV(os.Stdout, "bind", "127.0.0.1:"+strconv.Itoa(gcp.ServerPort)+" + IAP tunnel")
+	printKV(os.Stdout, "bind", "127.0.0.1:"+strconv.Itoa(gcp.ServerPort)+" + SSH tunnel")
 	printKV(os.Stdout, "container", plan.ContainerImage)
 	net := "no-address (need Cloud NAT)"
 	if plan.PublicIP {
@@ -441,7 +452,7 @@ func cmdGCPTunnel(args []string) error {
 	} else {
 		fmt.Fprintf(os.Stderr, "%s no stored bearer for %s — pass Authorization manually\n", yellow("warning:"), name)
 	}
-	fmt.Fprintf(os.Stderr, "%s IAP tunnel %s → 127.0.0.1:%d\n", dim("→"), name, *local)
+	fmt.Fprintf(os.Stderr, "%s SSH tunnel %s → 127.0.0.1:%d (guest loopback; preserves 127.0.0.1 bind)\n", dim("→"), name, *local)
 	return client.StartTunnel(ctx, gcp.TunnelOpts{
 		Project:    proj,
 		Zone:       z,
@@ -565,6 +576,61 @@ func cmdGCPDockerfile(args []string) error {
 	fmt.Println(gcp.Dockerfile(cfg))
 	fmt.Println("---")
 	fmt.Println(gcp.EntrypointScript(cfg))
+	return nil
+}
+
+func cmdGCPPush(args []string) error {
+	fs := newFlagSet("gcp push")
+	image := fs.String("image", "", "destination image tag (Artifact Registry / GCR)")
+	model := fs.String("model", "", "optional MODEL_ID hint")
+	gguf := fs.String("gguf", "", "optional GGUF filename")
+	idle := fs.Int("idle-timeout", 600, "idle seconds baked into image defaults")
+	dir := fs.String("dir", "", "build context directory (default: temp)")
+	platform := fs.String("platform", gcp.DefaultImagePlatform, "docker build --platform")
+	dry := fs.Bool("dry-run", false, "print docker commands only")
+	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+	imgRef := strings.TrimSpace(*image)
+	if imgRef == "" {
+		imgRef = strings.TrimSpace(os.Getenv("RUNHUG_GCP_IMAGE"))
+	}
+	if imgRef == "" {
+		return fmt.Errorf("usage: runhug gcp push --image REGION-docker.pkg.dev/PROJECT/runhug/llama-server:cuda (or set RUNHUG_GCP_IMAGE)")
+	}
+	if fs.NArg() >= 1 && strings.TrimSpace(*model) == "" {
+		*model = fs.Arg(0)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
+	defer cancel()
+
+	res, err := gcp.Push(ctx, gcp.PushRequest{
+		Image:    imgRef,
+		Dir:      strings.TrimSpace(*dir),
+		Platform: strings.TrimSpace(*platform),
+		DryRun:   *dry,
+		Config: gcp.ImageConfig{
+			ModelID:     strings.TrimSpace(*model),
+			GGUFFile:    strings.TrimSpace(*gguf),
+			IdleSeconds: *idle,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if *dry {
+		heading(os.Stdout, "gcp push (dry-run — local docker, no Cloud Build)")
+		printKV(os.Stdout, "dir", res.Dir)
+		printKV(os.Stdout, "image", res.Image)
+		printKV(os.Stdout, "platform", res.Platform)
+		fmt.Fprintln(os.Stdout)
+		fmt.Fprintln(os.Stdout, strings.Join(res.BuildCmd, " "))
+		fmt.Fprintln(os.Stdout, strings.Join(res.PushCmd, " "))
+		return nil
+	}
+	fmt.Fprintf(os.Stdout, "%s pushed %s\n", green("OK"), res.Image)
+	fmt.Fprintf(os.Stdout, "Next: runhug gcp deploy <org/model> --project <id> --image %s --yes\n", res.Image)
 	return nil
 }
 

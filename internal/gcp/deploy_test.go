@@ -52,14 +52,14 @@ func TestBuildPlanL4Default(t *testing.T) {
 	if !strings.Contains(joined, "--provisioning-model=SPOT") {
 		t.Fatal("expected SPOT")
 	}
-	if !strings.Contains(joined, "create-with-container") {
-		t.Fatal("expected create-with-container")
+	if len(plan.CreateArgs) < 3 || plan.CreateArgs[0] != "compute" || plan.CreateArgs[1] != "instances" || plan.CreateArgs[2] != "create" {
+		t.Fatalf("expected instances create, got %v", plan.CreateArgs[:min(5, len(plan.CreateArgs))])
 	}
-	if !strings.Contains(joined, "cos-stable") {
-		t.Fatal("expected COS image family")
+	if strings.Contains(joined, "create-with-container") {
+		t.Fatal("create-with-container is discontinued")
 	}
-	if !strings.Contains(joined, "--container-image=") {
-		t.Fatal("expected container image")
+	if !strings.Contains(joined, "common-cu129-ubuntu-2204-nvidia-580") {
+		t.Fatal("expected DLVM image family")
 	}
 	if !strings.Contains(joined, "no-address") {
 		t.Fatal("default must be no-address (Cloud NAT)")
@@ -70,8 +70,14 @@ func TestBuildPlanL4Default(t *testing.T) {
 	if strings.Contains(joined, "rh_testtoken") {
 		t.Fatal("printable args must not include bearer")
 	}
-	if !strings.Contains(plan.Dockerfile, "llama-server") {
-		t.Fatal("plan should carry Dockerfile")
+	if !strings.Contains(plan.Dockerfile, PrebuiltLlamaServerCUDA) {
+		t.Fatal("plan Dockerfile should wrap official server-cuda")
+	}
+	if strings.Contains(plan.Dockerfile, "cmake -B") {
+		t.Fatal("plan Dockerfile must not compile from source")
+	}
+	if !strings.Contains(plan.Startup, "docker run") {
+		t.Fatal("startup must docker run the prebuilt image")
 	}
 	if strings.Contains(plan.Startup, "cmake -B") || strings.Contains(plan.Startup, "git clone") {
 		t.Fatal("startup must not compile llama on the VM")
@@ -148,7 +154,7 @@ func TestBuildPlanPublicIP(t *testing.T) {
 		Project:        "p",
 		ModelID:        "org/m",
 		Bearer:         "rh_x",
-		ContainerImage: "us-docker.pkg.dev/p/runhug/llama-server:cuda12.4",
+		ContainerImage: "us-docker.pkg.dev/p/runhug/llama-server:cuda",
 		PublicIP:       true,
 	})
 	if err != nil {

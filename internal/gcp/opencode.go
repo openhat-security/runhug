@@ -21,8 +21,8 @@ type OpenCodeSpec struct {
 	Source  string
 }
 
-// OpenCodeConfig builds an opencode.json fragment without an apiKey field.
-// Bearer stays CLI-managed (env / tunnel session), not committed to the project file.
+// OpenCodeConfig builds an opencode.json fragment. Soft lock: no literal Bearer
+// is written — only an `{env:OPENAI_API_KEY}` reference (CLI-managed).
 func OpenCodeConfig(spec OpenCodeSpec) map[string]any {
 	modelKey := openCodeModelKey(spec.ModelID)
 	models := map[string]any{
@@ -34,7 +34,8 @@ func OpenCodeConfig(spec OpenCodeSpec) map[string]any {
 	}
 	options := map[string]any{
 		"baseURL": spec.BaseURL,
-		// intentionally no "apiKey" — soft lock: OpenCode client-side only
+		// Env ref only — never a literal Bearer. Soft lock: no secret in the file.
+		"apiKey": "{env:OPENAI_API_KEY}",
 	}
 	return map[string]any{
 		"$schema": openCodeSchema,
@@ -70,9 +71,8 @@ func WriteProjectOpenCode(dir string, spec OpenCodeSpec) (string, error) {
 		}
 	}
 	merged := deepMerge(existing, cfg).(map[string]any)
-	// Defense in depth: strip apiKey from our provider options if a merge
-	// reintroduced it from a partial overlay (we never set it ourselves).
-	stripProviderAPIKey(merged)
+	// Soft lock: never leave a literal Bearer in the file. Keep env refs.
+	normalizeProviderAPIKey(merged)
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
@@ -88,7 +88,7 @@ func WriteProjectOpenCode(dir string, spec OpenCodeSpec) (string, error) {
 	return path, nil
 }
 
-func stripProviderAPIKey(cfg map[string]any) {
+func normalizeProviderAPIKey(cfg map[string]any) {
 	prov, _ := cfg["provider"].(map[string]any)
 	if prov == nil {
 		return
@@ -101,7 +101,12 @@ func stripProviderAPIKey(cfg map[string]any) {
 	if opts == nil {
 		return
 	}
-	delete(opts, "apiKey")
+	if v, ok := opts["apiKey"].(string); ok {
+		if strings.HasPrefix(v, "{env:") || strings.HasPrefix(v, "${") {
+			return
+		}
+	}
+	opts["apiKey"] = "{env:OPENAI_API_KEY}"
 }
 
 func deepMerge(dst, src any) any {

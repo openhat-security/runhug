@@ -38,6 +38,19 @@ func TestGCPDockerfileCommand(t *testing.T) {
 	}
 }
 
+func TestGCPHelpMentionsPush(t *testing.T) {
+	s := gcpHelpText()
+	if !strings.Contains(s, "push") {
+		t.Fatal("gcp help should mention push")
+	}
+	if !strings.Contains(s, "pull + start") && !strings.Contains(s, "docker-pulls") {
+		t.Fatal("gcp help should mention docker pull cold start")
+	}
+	if !strings.Contains(s, "no Cloud Build") {
+		t.Fatal("gcp help should mention no Cloud Build")
+	}
+}
+
 func TestPeekProvider(t *testing.T) {
 	v, ok := peekProvider([]string{"--provider", "gcp", "m"})
 	if !ok || v != "gcp" {

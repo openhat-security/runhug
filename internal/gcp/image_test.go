@@ -18,8 +18,14 @@ func TestDockerfileNoSecrets(t *testing.T) {
 	if strings.Contains(df, "Bearer rh_") || strings.Contains(df, "Authorization:") {
 		t.Fatal("Dockerfile must not embed Authorization/Bearer values")
 	}
-	if !strings.Contains(df, "llama-server") {
-		t.Fatal("expected llama-server target")
+	if !strings.Contains(df, PrebuiltLlamaServerCUDA) {
+		t.Fatal("expected thin wrap of official server-cuda image")
+	}
+	if strings.Contains(df, "cmake -B") || strings.Contains(df, "git clone") {
+		t.Fatal("Dockerfile must not compile llama.cpp from source")
+	}
+	if !strings.Contains(df, "iproute2") {
+		t.Fatal("expected iproute2 for idle ss peers")
 	}
 	if !strings.Contains(df, "127.0.0.1") {
 		t.Fatal("expected bind hint / HOST default")
@@ -31,7 +37,11 @@ func TestDockerfileNoSecrets(t *testing.T) {
 
 func TestEntrypointSoftLocks(t *testing.T) {
 	ep := EntrypointScript(ImageConfig{IdleSeconds: 120})
-	for _, want := range []string{"127.0.0.1", "--api-key", "IDLE_SECONDS", "shutdown", "runhug-api-key", "huggingface-cli", "instances/", "/stop"} {
+	for _, want := range []string{
+		"127.0.0.1", "--api-key", "IDLE_SECONDS", "shutdown", "runhug-api-key",
+		"runhug-hf-token", "runhug-model-id", "runhug-gguf-file",
+		"hf \"", "instances/", "/stop",
+	} {
 		if !strings.Contains(ep, want) {
 			t.Fatalf("entrypoint missing %q", want)
 		}
@@ -42,7 +52,7 @@ func TestEntrypointSoftLocks(t *testing.T) {
 	}
 }
 
-func TestStartupDeprecatedNoCompile(t *testing.T) {
+func TestStartupDockerLauncher(t *testing.T) {
 	st := StartupScript(ImageConfig{ModelID: "org/model"})
 	if strings.Contains(st, "cmake -B") || strings.Contains(st, "git clone") {
 		t.Fatal("startup must not compile llama on the VM")
@@ -50,8 +60,10 @@ func TestStartupDeprecatedNoCompile(t *testing.T) {
 	if strings.Contains(st, "BEGIN PRIVATE KEY") {
 		t.Fatal("startup must not contain SA keys")
 	}
-	if !strings.Contains(st, "create-with-container") {
-		t.Fatal("startup stub should point at create-with-container")
+	for _, want := range []string{"docker pull", "docker run", "--gpus all", "--network host", "runhug-container-image", "127.0.0.1", "ensure_docker", "nvidia-container-toolkit"} {
+		if !strings.Contains(st, want) {
+			t.Fatalf("startup missing %q", want)
+		}
 	}
 }
 
@@ -69,5 +81,41 @@ func TestWriteImageFiles(t *testing.T) {
 		if name == "entrypoint.sh" && st.Mode()&0o111 == 0 {
 			t.Fatalf("entrypoint not executable: %v", st.Mode())
 		}
+	}
+}
+
+func TestPushDryRun(t *testing.T) {
+	dir := t.TempDir()
+	res, err := Push(t.Context(), PushRequest{
+		Image:  "us-central1-docker.pkg.dev/p/runhug/llama-server:cuda",
+		Dir:    dir,
+		DryRun: true,
+		Config: ImageConfig{ModelID: "org/m"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Image != "us-central1-docker.pkg.dev/p/runhug/llama-server:cuda" {
+		t.Fatalf("image=%s", res.Image)
+	}
+	if res.Platform != DefaultImagePlatform {
+		t.Fatalf("platform=%s", res.Platform)
+	}
+	joined := strings.Join(res.BuildCmd, " ")
+	if !strings.Contains(joined, "docker build") || !strings.Contains(joined, "--platform") {
+		t.Fatalf("build cmd=%v", res.BuildCmd)
+	}
+	if !strings.Contains(strings.Join(res.PushCmd, " "), "docker push") {
+		t.Fatalf("push cmd=%v", res.PushCmd)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "Dockerfile")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPushRequiresImage(t *testing.T) {
+	_, err := Push(t.Context(), PushRequest{DryRun: true})
+	if err == nil || !strings.Contains(err.Error(), "image required") {
+		t.Fatalf("want image required, got %v", err)
 	}
 }

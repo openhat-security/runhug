@@ -5,14 +5,15 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 )
 
-// TunnelOpts configures an IAP TCP tunnel to llama-server on the VM.
+// TunnelOpts configures an SSH local-forward tunnel to llama-server on the VM.
+// Soft lock: llama binds 127.0.0.1 on the guest; IAP TCP to the NIC cannot reach
+// loopback, so we forward via SSH (-L) instead of start-iap-tunnel.
 type TunnelOpts struct {
-	Project   string
-	Zone      string
-	Instance  string
+	Project    string
+	Zone       string
+	Instance   string
 	RemotePort int
 	LocalPort  int
 }
@@ -27,14 +28,17 @@ func (o TunnelOpts) withDefaults() TunnelOpts {
 	return o
 }
 
-// TunnelArgs returns gcloud args for start-iap-tunnel (OpenAI on 127.0.0.1).
+// TunnelArgs returns gcloud compute ssh args that open a local port forward.
 func TunnelArgs(o TunnelOpts) []string {
 	o = o.withDefaults()
+	fwd := fmt.Sprintf("%d:127.0.0.1:%d", o.LocalPort, o.RemotePort)
 	return []string{
-		"compute", "start-iap-tunnel", o.Instance, strconv.Itoa(o.RemotePort),
+		"compute", "ssh", o.Instance,
 		"--project=" + o.Project,
 		"--zone=" + o.Zone,
-		fmt.Sprintf("--local-host-port=localhost:%d", o.LocalPort),
+		"--",
+		"-N",
+		"-L", fwd,
 	}
 }
 
@@ -46,17 +50,16 @@ func LocalOpenAIURL(localPort int) string {
 	return fmt.Sprintf("http://127.0.0.1:%d/v1", localPort)
 }
 
-// StartTunnel runs gcloud compute start-iap-tunnel in the foreground.
+// StartTunnel runs gcloud compute ssh -N -L in the foreground.
 func (c *Client) StartTunnel(ctx context.Context, o TunnelOpts) error {
 	o = o.withDefaults()
 	if err := EnsureProject(o.Project); err != nil {
 		return err
 	}
 	if o.Instance == "" || o.Zone == "" {
-		return fmt.Errorf("instance and zone required for IAP tunnel")
+		return fmt.Errorf("instance and zone required for tunnel")
 	}
 	args := TunnelArgs(o)
-	// Prefer attaching stdio so the user sees tunnel logs.
 	bin := "gcloud"
 	if r, ok := c.runner().(DefaultRunner); ok && r.Bin != "" {
 		bin = r.Bin

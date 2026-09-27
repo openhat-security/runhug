@@ -43,7 +43,7 @@ func DefaultTargets() []GPUTarget {
 			Accelerator:    "nvidia-tesla-t4",
 			AcceleratorCnt: 1,
 			DiskGB:         200,
-			Reason:         "Spot T4 fallback when L4 stock/quota is unavailable",
+			Reason:         "Spot T4 (n1-standard-4)",
 		},
 	}
 }
