@@ -4,12 +4,13 @@
 # Unsigned by default (trusted=yes / gpgcheck=0). Set GPG_PRIVATE_KEY to sign.
 set -euo pipefail
 
-PKG_DIR="${1:?pkg dir}"
-OUT="${2:?out dir}"
+PKG_DIR="$(cd "${1:?pkg dir}" && pwd)"
+OUT_RAW="${2:?out dir}"
 REPO_URL="${REPO_URL:-https://openhat-security.github.io/packages}"
 
-rm -rf "$OUT"
-mkdir -p "$OUT/deb/pool/main" "$OUT/deb/dists/stable/main/binary-amd64" "$OUT/deb/dists/stable/main/binary-arm64" "$OUT/rpm"
+rm -rf "$OUT_RAW"
+mkdir -p "$OUT_RAW/deb/pool/main" "$OUT_RAW/deb/dists/stable/main/binary-amd64" "$OUT_RAW/deb/dists/stable/main/binary-arm64" "$OUT_RAW/rpm"
+OUT="$(cd "$OUT_RAW" && pwd)"
 
 # --- apt (flat-ish pool + dists) ---
 shopt -s nullglob
