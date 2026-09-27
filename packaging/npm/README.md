@@ -1,7 +1,8 @@
 # runhug (npm)
 
-npm wrapper for the [runhug](https://github.com/openhat-security/runhug) CLI.
-`postinstall` downloads the matching GitHub Release binary for your OS/arch.
+npm wrapper for the [runhug](https://github.com/openhat-security/runhug) CLI
+(lives at `packaging/npm` in the repo). `postinstall` downloads the matching
+GitHub Release binary for your OS/arch.
 
 ```bash
 npm install -g runhug

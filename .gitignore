@@ -7,6 +7,9 @@
 coverage.out
 node_modules/
 npm/vendor/
+packaging/npm/vendor/
+packaging/npm/.npmrc
+packaging/winget/[0-9]*/
 __pycache__/
 *.pyc
 .scratch/

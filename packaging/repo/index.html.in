@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>runhug Linux packages</title>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }
+    code, pre { background: #f4f4f5; padding: 0.15em 0.4em; border-radius: 4px; }
+    pre { padding: 1rem; overflow-x: auto; }
+    h1 { font-size: 1.5rem; }
+  </style>
+</head>
+<body>
+  <h1>runhug packages</h1>
+  <p>Free apt + dnf repositories for <a href="https://github.com/openhat-security/runhug">openhat-security/runhug</a>.</p>
+
+  <h2>Debian / Ubuntu</h2>
+  <pre>curl -fsSL @REPO_URL@/install-apt.sh | sudo bash</pre>
+
+  <h2>Fedora / RHEL-ish</h2>
+  <pre>curl -fsSL @REPO_URL@/install-dnf.sh | sudo bash</pre>
+
+  <p>Raw trees: <a href="deb/">deb/</a> · <a href="rpm/">rpm/</a> · <a href="runhug.list">runhug.list</a> · <a href="runhug.repo">runhug.repo</a></p>
+</body>
+</html>

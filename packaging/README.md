@@ -1,0 +1,53 @@
+# Packaging
+
+Release channels for runhug. Tagged releases (`v*`) are built by GoReleaser
+(`.goreleaser.yaml` + `.github/workflows/release.yml`).
+
+| Channel | How users install | Source |
+|--------|-------------------|--------|
+| GitHub Release | `scripts/install.sh` / `install.ps1` | bare binaries + `.deb` / `.rpm` |
+| Homebrew | `brew install --cask openhat-security/tap/runhug` | `openhat-security/homebrew-tap` (Cask) |
+| apt | `curl …/install-apt.sh \| sudo bash` | Pages repo `openhat-security/packages` |
+| dnf | `curl …/install-dnf.sh \| sudo bash` | same Pages repo |
+| pacman / AUR | `yay -S runhug-bin` | [`aur/`](aur/) (publish to AUR once) |
+| Scoop | `scoop bucket add openhat https://github.com/openhat-security/scoop-bucket` then `scoop install runhug` | `openhat-security/scoop-bucket` |
+| winget | `winget install OpenHatSecurity.Runhug` (after PR merges) | [`winget/`](winget/) |
+| npm | `npm i -g runhug` | [`npm/`](npm/) |
+
+## Layout
+
+```
+packaging/
+  npm/           npm wrapper (postinstall downloads GitHub Release binary)
+  aur/           Arch PKGBUILD for AUR
+  winget/        winget manifest generator + per-version output
+  repo/          apt/dnf Pages templates + build-pages-repos.sh
+```
+
+## Org repos (create once)
+
+```bash
+gh repo create openhat-security/homebrew-tap --public --description "Homebrew tap for OpenHat Security CLIs" --add-readme
+gh repo create openhat-security/scoop-bucket --public --description "Scoop bucket for OpenHat Security CLIs" --add-readme
+gh repo create openhat-security/packages --public --description "apt + dnf repos for OpenHat Security (GitHub Pages)" --add-readme
+# Settings → Pages → Deploy from branch gh-pages (created by publish-linux-repos workflow)
+```
+
+## Secrets (on `openhat-security/runhug`)
+
+| Secret | Required for |
+|--------|----------------|
+| `HOMEBREW_TAP_TOKEN` or `PACKAGING_TOKEN` | Push formula to `homebrew-tap` |
+| `SCOOP_TOKEN` or `PACKAGING_TOKEN` | Push Scoop manifest |
+| `PACKAGING_TOKEN` | Push `packages` gh-pages (apt/dnf) |
+| `NPM_TOKEN` | `npm publish` from `packaging/npm` |
+| `WINGET_PAT` | Auto-PR to `microsoft/winget-pkgs` |
+| `GPG_PRIVATE_KEY` | Optional signing for apt InRelease (unset = `trusted=yes`) |
+
+`PACKAGING_TOKEN` should be a fine-grained PAT (or classic) with **contents: write** on `homebrew-tap`, `scoop-bucket`, and `packages`.
+
+## Local snapshot
+
+```bash
+make release-snapshot   # goreleaser --snapshot, or fallback cross-build
+```

@@ -1,0 +1,130 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: runhug
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: runhug
+    main: ./cmd/runhug
+    binary: runhug
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/adamsiwiec1/runhug/internal/version.Version={{.Version}}
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: default
+    # Unix: bare binary (scripts/install.sh). Windows: zip (Scoop + install.ps1).
+    formats: [binary]
+    name_template: "runhug_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: SHA256SUMS.txt
+  algorithm: sha256
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: openhat-security
+    name: runhug
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"
+
+nfpms:
+  - id: packages
+    ids:
+      - runhug
+    package_name: runhug
+    file_name_template: "runhug_{{ .Version }}_{{ .Arch }}"
+    homepage: https://github.com/openhat-security/runhug
+    maintainer: OpenHat Security <opensource@openhat.dev>
+    description: |-
+      Find the best Hugging Face model. Deploy it in minutes. Run it for pennies.
+    license: MIT
+    section: utils
+    priority: optional
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+    contents:
+      - src: LICENSE
+        dst: /usr/share/doc/runhug/LICENSE
+        type: doc
+      - src: README.md
+        dst: /usr/share/doc/runhug/README.md
+        type: doc
+
+homebrew_casks:
+  - name: runhug
+    ids:
+      - default
+    repository:
+      owner: openhat-security
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Casks
+    homepage: https://github.com/openhat-security/runhug
+    description: Find the best Hugging Face model. Deploy it in minutes. Run it for pennies.
+    license: MIT
+    commit_author:
+      name: runhug-bot
+      email: 41898282+github-actions[bot]@users.noreply.github.com
+    binaries:
+      - runhug
+    # Unsigned GitHub Release binaries need quarantine cleared on macOS.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/runhug"]
+          end
+
+scoops:
+  - name: runhug
+    ids:
+      - default
+    repository:
+      owner: openhat-security
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_TOKEN }}"
+    homepage: https://github.com/openhat-security/runhug
+    description: Find the best Hugging Face model. Deploy it in minutes. Run it for pennies.
+    license: MIT
+    commit_author:
+      name: runhug-bot
+      email: 41898282+github-actions[bot]@users.noreply.github.com
+    url_template: "https://github.com/openhat-security/runhug/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+
+snapshot:
+  version_template: "{{ .Version }}-next"

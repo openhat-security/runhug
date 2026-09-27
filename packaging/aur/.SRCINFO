@@ -1,0 +1,16 @@
+pkgbase = runhug-bin
+	pkgdesc = Find the best Hugging Face model. Deploy it in minutes. Run it for pennies.
+	pkgver = 0.1.7
+	pkgrel = 1
+	url = https://github.com/openhat-security/runhug
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	provides = runhug
+	conflicts = runhug
+	source_x86_64 = runhug-bin-0.1.7-x86_64::https://github.com/openhat-security/runhug/releases/download/v0.1.7/runhug_0.1.7_linux_amd64
+	sha256sums_x86_64 = SKIP
+	source_aarch64 = runhug-bin-0.1.7-aarch64::https://github.com/openhat-security/runhug/releases/download/v0.1.7/runhug_0.1.7_linux_arm64
+	sha256sums_aarch64 = SKIP
+
+pkgname = runhug-bin

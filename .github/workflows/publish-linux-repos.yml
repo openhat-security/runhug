@@ -1,0 +1,89 @@
+# Rebuild apt + dnf repos on GitHub Pages (openhat-security/packages) from the
+# latest release's .deb / .rpm assets. Free hosting; no GoReleaser Pro.
+name: Publish Linux repos
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to index (e.g. v0.1.8). Empty = latest.
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          TAG="${INPUT_TAG:-}"
+          if [ -z "$TAG" ]; then TAG="${RELEASE_TAG:-}"; fi
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release view --json tagName -q .tagName -R openhat-security/runhug)
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Using tag $TAG"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download deb/rpm assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/pkgs
+          gh release download "$TAG" -R openhat-security/runhug -D /tmp/pkgs -p '*.deb' -p '*.rpm' || true
+          ls -la /tmp/pkgs || true
+          if ! ls /tmp/pkgs/*.deb >/dev/null 2>&1 && ! ls /tmp/pkgs/*.rpm >/dev/null 2>&1; then
+            echo "No .deb/.rpm on release $TAG — nothing to publish"
+            echo "skip=1" >> "$GITHUB_ENV"
+          else
+            echo "skip=0" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build apt + dnf trees
+        if: env.skip != '1'
+        run: bash packaging/repo/build-pages-repos.sh /tmp/pkgs public
+
+      - name: Checkout packages repo
+        if: env.skip != '1'
+        uses: actions/checkout@v7
+        with:
+          repository: openhat-security/packages
+          token: ${{ secrets.PACKAGING_TOKEN || secrets.GITHUB_TOKEN }}
+          path: packages-repo
+
+      - name: Push site to packages (gh-pages branch)
+        if: env.skip != '1'
+        working-directory: packages-repo
+        env:
+          GH_TOKEN: ${{ secrets.PACKAGING_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "runhug-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B gh-pages
+          # Replace site contents
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          cp -a ../public/. .
+          touch .nojekyll
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No repo changes"
+            exit 0
+          fi
+          git commit -m "sync packages from runhug ${{ steps.tag.outputs.tag }}"
+          git push -u origin gh-pages --force

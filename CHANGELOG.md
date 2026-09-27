@@ -19,6 +19,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Multi-channel packaging via GoReleaser: Homebrew Cask (`openhat-security/homebrew-tap`), Scoop (`openhat-security/scoop-bucket`), `.deb`/`.rpm` (nfpm), apt + dnf repos on GitHub Pages (`openhat-security/packages`), AUR `runhug-bin` PKGBUILD, winget manifest generator, npm under `packaging/npm`.
+
 ## [0.1.7] - 2026-09-27
 
 ### Added

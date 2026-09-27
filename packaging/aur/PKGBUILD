@@ -1,0 +1,25 @@
+# Maintainer: OpenHat Security <opensource@openhat.dev>
+# shellcheck disable=SC2034
+pkgname=runhug-bin
+pkgver=0.1.7
+pkgrel=1
+pkgdesc="Find the best Hugging Face model. Deploy it in minutes. Run it for pennies."
+arch=('x86_64' 'aarch64')
+url="https://github.com/openhat-security/runhug"
+license=('MIT')
+provides=('runhug')
+conflicts=('runhug')
+depends=()
+source_x86_64=("${pkgname}-${pkgver}-x86_64::https://github.com/openhat-security/runhug/releases/download/v${pkgver}/runhug_${pkgver}_linux_amd64")
+source_aarch64=("${pkgname}-${pkgver}-aarch64::https://github.com/openhat-security/runhug/releases/download/v${pkgver}/runhug_${pkgver}_linux_arm64")
+sha256sums_x86_64=('SKIP')
+sha256sums_aarch64=('SKIP')
+
+package() {
+  local bin
+  case "$CARCH" in
+    x86_64) bin="${pkgname}-${pkgver}-x86_64" ;;
+    aarch64) bin="${pkgname}-${pkgver}-aarch64" ;;
+  esac
+  install -Dm755 "${srcdir}/${bin}" "${pkgdir}/usr/bin/runhug"
+}

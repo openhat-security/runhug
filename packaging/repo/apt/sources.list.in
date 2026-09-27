@@ -1,0 +1,2 @@
+# runhug apt repo (GitHub Pages)
+deb [trusted=yes] @REPO_URL@/deb stable main

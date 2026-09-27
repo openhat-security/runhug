@@ -42,6 +42,43 @@ Other useful commands: `inspect`, `update` / `update --packs`, `gpus`, `url`, `s
 
 ## Install
 
+**Homebrew (macOS / Linux):**
+
+```bash
+brew install --cask openhat-security/tap/runhug
+```
+
+**apt (Debian / Ubuntu):**
+
+```bash
+curl -fsSL https://openhat-security.github.io/packages/install-apt.sh | sudo bash
+```
+
+**dnf (Fedora / RHEL-ish):**
+
+```bash
+curl -fsSL https://openhat-security.github.io/packages/install-dnf.sh | sudo bash
+```
+
+**Arch (AUR):**
+
+```bash
+yay -S runhug-bin
+```
+
+**Scoop (Windows):**
+
+```powershell
+scoop bucket add openhat https://github.com/openhat-security/scoop-bucket
+scoop install runhug
+```
+
+**winget (Windows):**
+
+```powershell
+winget install OpenHatSecurity.Runhug
+```
+
 **npm** (Node ≥ 18):
 
 ```bash
@@ -50,13 +87,13 @@ npm install -g runhug
 npx runhug wizard
 ```
 
-**macOS / Linux:**
+**Direct binary (macOS / Linux):**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/openhat-security/runhug/main/scripts/install.sh | bash
 ```
 
-**Windows (amd64, PowerShell):**
+**Direct binary (Windows PowerShell):**
 
 ```powershell
 irm https://raw.githubusercontent.com/openhat-security/runhug/main/scripts/install.ps1 | iex
@@ -68,7 +105,7 @@ irm https://raw.githubusercontent.com/openhat-security/runhug/main/scripts/insta
 go install github.com/adamsiwiec1/runhug/cmd/runhug@latest
 ```
 
-npm / install scripts detect OS/arch and fetch the latest GitHub Release binary (`runhug_<ver>_…`, falling back to legacy `runhug-cli_` assets). Releases: [github.com/openhat-security/runhug/releases](https://github.com/openhat-security/runhug/releases).
+Packaging details and release secrets: [packaging/README.md](packaging/README.md). Releases: [github.com/openhat-security/runhug/releases](https://github.com/openhat-security/runhug/releases).
 
 From source: `git clone … && go build -o bin/runhug ./cmd/runhug`.
 

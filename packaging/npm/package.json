@@ -18,7 +18,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/openhat-security/runhug.git",
-    "directory": "npm"
+    "directory": "packaging/npm"
   },
   "license": "MIT",
   "author": "OpenHat Security",

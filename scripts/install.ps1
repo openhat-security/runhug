@@ -1,13 +1,11 @@
 # Install the latest runhug Windows amd64 release from openhat-security/runhug.
-# Next release asset: runhug_<ver>_windows_amd64.exe → runhug.exe
-# Fallback: older tags may still publish runhug-cli_<ver>_windows_amd64.exe
+# Prefers runhug_<ver>_windows_amd64.zip (GoReleaser); falls back to bare .exe.
 # Usage: irm https://raw.githubusercontent.com/openhat-security/runhug/main/scripts/install.ps1 | iex
 $ErrorActionPreference = "Stop"
 $Repo = if ($env:RUNHUG_REPO) { $env:RUNHUG_REPO } else { "openhat-security/runhug" }
 $AssetPrefixes = @("runhug_", "runhug-cli_")
 $BinName = "runhug.exe"
 
-# Optional: $env:TAG = "v0.1.3" or $env:VERSION = "0.1.3" to pin a release (default: latest)
 $headers = @{ Accept = "application/vnd.github+json"; "User-Agent" = "runhug-install" }
 if ($env:TAG) {
   $tagHint = $env:TAG
@@ -23,9 +21,16 @@ $tag = $release.tag_name
 $ver = $tag.TrimStart("v")
 
 $asset = $null
+$isZip = $false
 foreach ($prefix in $AssetPrefixes) {
-  $assetName = "${prefix}${ver}_windows_amd64.exe"
-  $asset = $release.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
+  foreach ($suffix in @("windows_amd64.zip", "windows_amd64.exe")) {
+    $assetName = "${prefix}${ver}_${suffix}"
+    $asset = $release.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
+    if ($asset) {
+      $isZip = $suffix.EndsWith(".zip")
+      break
+    }
+  }
   if ($asset) { break }
 }
 if (-not $asset) {
@@ -37,7 +42,20 @@ New-Item -ItemType Directory -Force -Path $destDir | Out-Null
 $dest = Join-Path $destDir $BinName
 
 Write-Host "Downloading $($asset.browser_download_url)"
-Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $dest
+if ($isZip) {
+  $tmpZip = Join-Path $env:TEMP "runhug-$ver.zip"
+  $tmpDir = Join-Path $env:TEMP "runhug-$ver-extract"
+  Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmpZip
+  if (Test-Path $tmpDir) { Remove-Item -Recurse -Force $tmpDir }
+  Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force
+  $found = Get-ChildItem -Path $tmpDir -Recurse -Filter "runhug.exe" | Select-Object -First 1
+  if (-not $found) { throw "runhug.exe not found inside $($asset.name)" }
+  Copy-Item -Force $found.FullName $dest
+  Remove-Item -Force $tmpZip -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
+} else {
+  Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $dest
+}
 
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if (-not ($userPath -split ";" | Where-Object { $_ -eq $destDir })) {

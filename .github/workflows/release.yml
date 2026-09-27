@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN || secrets.PACKAGING_TOKEN || secrets.GITHUB_TOKEN }}
+          SCOOP_TOKEN: ${{ secrets.SCOOP_TOKEN || secrets.PACKAGING_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Publish npm package
+        if: success()
+        working-directory: packaging/npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VER: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "NPM_TOKEN not set — skipping npm publish"
+            exit 0
+          fi
+          VER="${VER#v}"
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); p.version=process.env.VER; fs.writeFileSync('package.json', JSON.stringify(p,null,2)+'\n')"
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > .npmrc
+          npm publish --access public
+
+  winget:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Update winget manifests / submit PR
+        env:
+          WINGET_PAT: ${{ secrets.WINGET_PAT }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VER="${TAG#v}"
+          ASSET="runhug_${VER}_windows_amd64.zip"
+          URL="https://github.com/openhat-security/runhug/releases/download/${TAG}/${ASSET}"
+          bash packaging/winget/generate.sh "$VER" "$URL"
+          if [ -z "${WINGET_PAT:-}" ]; then
+            echo "WINGET_PAT not set — manifests written under packaging/winget/${VER}/ (manual PR)"
+            exit 0
+          fi
+          curl -fsSL -o /tmp/komac "https://github.com/russellbanks/Komac/releases/latest/download/komac-x86_64-unknown-linux-gnu" || true
+          if [ -x /tmp/komac ] || [ -f /tmp/komac ]; then
+            chmod +x /tmp/komac
+            /tmp/komac update OpenHatSecurity.Runhug --version "$VER" --urls "$URL" --submit --token "$WINGET_PAT" || \
+              echo "komac submit failed; use packaging/winget/${VER}/ for a manual PR to microsoft/winget-pkgs"
+          else
+            echo "komac unavailable; use packaging/winget/${VER}/ for a manual PR"
+          fi
