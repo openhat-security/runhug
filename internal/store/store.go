@@ -14,6 +14,7 @@ import (
 const (
 	BackendRunpod = "runpod"
 	BackendLocal  = "local"
+	BackendGCP    = "gcp"
 )
 
 type Registry struct {
@@ -154,6 +155,9 @@ func (r *Registry) Lookup(key string) (Model, bool) {
 	}
 	for _, m := range r.Models {
 		if m.EndpointID != "" && m.EndpointID == key {
+			return m, true
+		}
+		if m.PodID != "" && m.PodID == key {
 			return m, true
 		}
 		if m.BaseURL != "" && m.BaseURL == key {

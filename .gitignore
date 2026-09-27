@@ -11,3 +11,6 @@ __pycache__/
 .scratch/
 .coverage*
 .coverage
+containers/llamacpp-build/
+.opencode/
+.wrangler/

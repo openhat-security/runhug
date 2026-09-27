@@ -18,7 +18,19 @@ import (
 )
 
 func cmdDeploy(args []string) error {
+	// Peek --provider before RunPod flag parse so GCP-only flags (--project, …) work.
+	if p, ok := peekProvider(args); ok {
+		switch strings.ToLower(p) {
+		case "gcp", "google", "gce":
+			return cmdGCPDeploy(stripProviderFlag(args))
+		case "", "runpod":
+			// continue
+		default:
+			return fmt.Errorf("unknown --provider %q (want runpod or gcp)", p)
+		}
+	}
 	fs := newFlagSet("deploy")
+	provider := fs.String("provider", "runpod", "runpod (default) or gcp")
 	yes := fs.Bool("yes", false, "create without a prompt")
 	dry := fs.Bool("dry-run", false, "print the plan only")
 	estimate := fs.Bool("estimate", false, "print full approximate cost block on the plan")
@@ -46,6 +58,7 @@ func cmdDeploy(args []string) error {
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
+	_ = provider // already handled via peek; kept for --help
 	if fs.NArg() < 1 {
 		return fmt.Errorf("usage: runhug deploy <org/model>")
 	}
@@ -349,4 +362,44 @@ func slug(modelID string) string {
 		s = s[:80]
 	}
 	return s
+}
+
+
+// peekProvider returns --provider value when present.
+func peekProvider(args []string) (string, bool) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--provider" || a == "-provider":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				return args[i+1], true
+			}
+			return "", true
+		case strings.HasPrefix(a, "--provider="):
+			return strings.TrimPrefix(a, "--provider="), true
+		case strings.HasPrefix(a, "-provider="):
+			return strings.TrimPrefix(a, "-provider="), true
+		}
+	}
+	return "", false
+}
+
+// stripProviderFlag removes --provider / --provider=X so nested gcp deploy can re-parse.
+func stripProviderFlag(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--provider" || a == "-provider":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				i++
+			}
+			continue
+		case strings.HasPrefix(a, "--provider=") || strings.HasPrefix(a, "-provider="):
+			continue
+		default:
+			out = append(out, a)
+		}
+	}
+	return out
 }

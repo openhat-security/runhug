@@ -9,10 +9,10 @@
 ## What it does
 
 1. **Search** Hugging Face — find models that fit your use case (local SQLite index + optional embeddings)
-2. **Deploy** RunPod serverless vLLM — one QUEUE endpoint in minutes (workers min=0)
-3. **Use** an OpenAI-compatible URL — chat from any OpenAI client, `runhug run`, or `runhug start claude`
+2. **Deploy** RunPod serverless vLLM (default) — or **GCP Spot L4/T4** llama.cpp via `--provider gcp`
+3. **Use** an OpenAI-compatible URL — chat from any OpenAI client, `runhug run`, or `runhug start claude` / `start opencode`
 
-Deploy stays **RunPod-only** for now. Hugging Face is Hub search + optional embeddings — not GPU deploy. (HF Inference Endpoints bill while ready with long idle windows; RunPod serverless bills per second, which matches “run it for pennies.”)
+**Providers:** RunPod remains the default `deploy`. GCP Phase 1 (`runhug deploy --provider gcp` / `runhug gcp …`) picks a project + HF GGUF model at use time, thin-wraps the official CUDA `llama-server` image (`runhug gcp push` → Artifact Registry; no secrets baked in), creates a Spot L4/T4 DLVM that `docker pull`s + runs that image (cold start = pull + start) with stop-on-idle, and exposes OpenAI `/v1` on `127.0.0.1` through an SSH local-forward tunnel (`runhug gcp tunnel`) with a CLI-managed Bearer. Default is no public IP (Cloud NAT for pull/egress; `--public-ip` is dogfood-only). Hugging Face stays Hub search + optional embeddings.
 
 ## How to use
 
@@ -25,7 +25,10 @@ runhug connect hf      # optional Hub / embeddings token
 runhug search -q "small instruct llm"
 runhug recommend -q "cheap chat on a small GPU"
 runhug deploy <model> --dry-run
-runhug deploy <model>              # default endpoint type: QUEUE
+runhug deploy <model>              # default endpoint type: QUEUE (RunPod)
+runhug deploy --provider gcp <gguf-model> --project <id> --dry-run
+runhug gcp push --image REGION-docker.pkg.dev/PROJECT/runhug/llama-server:cuda
+runhug gcp tunnel                  # SSH local-forward → http://127.0.0.1:8080/v1
 runhug list
 runhug proxy                       # local OpenAI proxy @ 127.0.0.1:8080/v1
 runhug run [model]                 # chat

@@ -20,6 +20,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **GCP GPU provider (Phase 1):** `runhug gcp deploy|tunnel|status|stop|delete|dockerfile|push|opencode` and `runhug deploy --provider gcp`. Use-time GCP project + HF/GGUF model pick (never hardcoded). Thin-wraps `ghcr.io/ggml-org/llama.cpp:server-cuda` (Dockerfile/entrypoint; no ADC/SA/Bearer baked in); `runhug gcp push` does local `docker build --platform linux/amd64` + push (no Cloud Build). Spot L4 (T4 fallback) DLVM runs `docker pull` + `docker run` (GCP discontinued `create-with-container`) + stop-on-idle; OpenAI `/v1` on `127.0.0.1` via SSH local-forward tunnel; CLI-managed Bearer; project `.opencode/opencode.json` merge without `apiKey` (dry-run prints to stdout). Auth via gcloud Application Default Credentials.
 - `runhug heretic make <org/model>` trains a "heretic" (abliteration) model on a RunPod GPU pod running `ghcr.io/adamsiwiec1/runhug-heretic`. The CLI sizes the GPU against the Hub repo, provisions the pod, and streams live trial progress (refusals / KL divergence) to the terminal via the pod dashboard; the decensored model is uploaded to `<hf-user>/heretic-<model>` when a HF token is configured. Also `heretic logs`, `heretic stop`, `heretic status`; pod-backed registry entries show up in `list` / `status` / `delete`.
 
 ### Changed
