@@ -1,0 +1,647 @@
+package cli
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/adamsiwiec1/runhug/internal/config"
+	"github.com/adamsiwiec1/runhug/internal/gcp"
+	"github.com/adamsiwiec1/runhug/internal/hf"
+	"github.com/adamsiwiec1/runhug/internal/store"
+)
+
+func cmdGCP(args []string) error {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stdout, gcpHelpText())
+		return nil
+	}
+	switch args[0] {
+	case "deploy", "run", "launch":
+		return cmdGCPDeploy(args[1:])
+	case "tunnel", "iap":
+		return cmdGCPTunnel(args[1:])
+	case "stop":
+		return cmdGCPStop(args[1:])
+	case "delete", "rm":
+		return cmdGCPDelete(args[1:])
+	case "status":
+		return cmdGCPStatus(args[1:])
+	case "dockerfile", "image":
+		return cmdGCPDockerfile(args[1:])
+	case "opencode":
+		return cmdGCPOpenCode(args[1:])
+	case "-h", "--help", "help":
+		fmt.Fprintln(os.Stdout, gcpHelpText())
+		return nil
+	default:
+		return fmt.Errorf("unknown gcp command %q\n\n%s", args[0], gcpHelpText())
+	}
+}
+
+func gcpHelpText() string {
+	return `usage: runhug gcp <command>
+
+Phase 1 GCP GPU provider (Spot L4, T4 fallback) serving llama.cpp llama-server.
+Auth is gcloud Application Default Credentials. OpenAI /v1 binds 127.0.0.1 on the
+VM; reach it with an IAP tunnel. Bearer is CLI-managed (never baked into the image).
+
+commands:
+  deploy [org/model]   pick project + GGUF model, create Spot VM + stop-on-idle
+  tunnel [name]        IAP tunnel → http://127.0.0.1:8080/v1
+  status [name]        instance status
+  stop [name]          stop the VM (preserves disk)
+  delete [name]        delete the VM + registry entry
+  dockerfile           print generated Dockerfile + entrypoint (stdout)
+  opencode             emit/merge project .opencode/opencode.json (no apiKey)
+
+Also: runhug deploy --provider gcp <model>
+
+flags for deploy:
+  --project <id>       GCP project (required unless interactive pick / gcloud default)
+  --zone <zone>        default us-central1-a
+  --region <region>    used when --zone omitted
+  --gpu L4|T4          default L4 (T4 auto-fallback on create failure)
+  --idle-timeout <sec> stop-on-idle seconds (default 600)
+  --name <instance>    GCE instance name
+  --gguf <file>        preferred .gguf filename in the repo
+  --disk <gb>          boot disk (default 200)
+  --write-image <dir>  write Dockerfile + entrypoint.sh
+  --opencode           merge project .opencode/opencode.json (no apiKey)
+  --yes, --dry-run, --json
+
+soft locks: gcloud ADC · Bearer + 127.0.0.1 + IAP · stop-on-idle · OpenCode client-side only
+`
+}
+
+func cmdGCPDeploy(args []string) error {
+	fs := newFlagSet("gcp deploy")
+	_ = fs.String("provider", "gcp", "ignored (gcp subcommand)")
+	yes := fs.Bool("yes", false, "create without a prompt")
+	dry := fs.Bool("dry-run", false, "print the plan only")
+	asJSON := fs.Bool("json", false, "print JSON")
+	project := fs.String("project", "", "GCP project id (no hardcoded default)")
+	zone := fs.String("zone", "", "GCE zone")
+	region := fs.String("region", "", "GCE region")
+	gpu := fs.String("gpu", "", "L4 (default) or T4")
+	idle := fs.Int("idle-timeout", 600, "seconds before stop-on-idle")
+	name := fs.String("name", "", "instance name")
+	gguf := fs.String("gguf", "", "preferred GGUF filename")
+	disk := fs.Int("disk", 0, "boot disk GB")
+	writeImage := fs.String("write-image", "", "write Dockerfile+entrypoint to dir")
+	doOpenCode := fs.Bool("opencode", false, "merge project .opencode/opencode.json (no apiKey)")
+	openCodeDir := fs.String("opencode-dir", ".", "project dir for .opencode/opencode.json")
+	noFallback := fs.Bool("no-fallback", false, "do not fall back from L4 to T4")
+	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+
+	modelArg := ""
+	if fs.NArg() >= 1 {
+		modelArg = fs.Arg(0)
+	}
+
+	client := gcp.NewClient()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	if err := client.RequireADC(ctx); err != nil && !*dry {
+		return err
+	}
+	if *dry {
+		// dry-run may still proceed without ADC so Dockerfile/plan can print
+		_ = gcp.RequireGCloud()
+	}
+
+	proj := strings.TrimSpace(*project)
+	if proj == "" {
+		var err error
+		proj, err = resolveGCPProject(ctx, client, !*dry && promptOK())
+		if err != nil {
+			return err
+		}
+	}
+	if err := gcp.EnsureProject(proj); err != nil {
+		return err
+	}
+
+	modelID := strings.TrimSpace(modelArg)
+	ggufFile := strings.TrimSpace(*gguf)
+	env := config.Load()
+
+	if modelID == "" {
+		if !*dry && promptOK() {
+			line, err := readLine("HF GGUF model (org/name): ")
+			if err != nil {
+				return err
+			}
+			modelID = strings.TrimSpace(line)
+		}
+	}
+	if modelID == "" {
+		return fmt.Errorf("usage: runhug gcp deploy <org/model> — model is required (never hardcoded)")
+	}
+
+	// Resolve Hub card when possible (prefer GGUF).
+	hctx, hcancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer hcancel()
+	model, err := hf.New(env.HFToken).Get(hctx, modelID)
+	if err != nil {
+		if !*dry {
+			return fmt.Errorf("huggingface model: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "%s could not fetch Hub card (%v); continuing dry-run with %s\n", yellow("warning:"), err, modelID)
+	} else {
+		modelID = model.RepoID()
+		format := hf.DetectFormat(*model)
+		if format.Engine != hf.EngineGGUF && format.Engine != hf.EngineUnknown {
+			fmt.Fprintf(os.Stderr, "%s %s looks like %s; GCP Phase 1 serves llama.cpp GGUF only\n", yellow("warning:"), modelID, format.Engine)
+		}
+		if ggufFile == "" {
+			if file, _, ok := hf.PickGGUF(*model); ok {
+				ggufFile = file
+			}
+		}
+		if model.IsGated() && env.HFToken == "" {
+			return fmt.Errorf("%s is gated; set HF_TOKEN (passed as instance metadata, not baked into the image)", modelID)
+		}
+	}
+
+	bearer, err := gcp.GenerateBearer()
+	if err != nil {
+		return err
+	}
+
+	plan, err := gcp.BuildPlan(gcp.DeployRequest{
+		Project:     proj,
+		Zone:        *zone,
+		Region:      *region,
+		Name:        *name,
+		ModelID:     modelID,
+		GGUFFile:    ggufFile,
+		GPU:         *gpu,
+		IdleSeconds: *idle,
+		DiskGB:      *disk,
+		Bearer:      bearer,
+		HFToken:     env.HFToken,
+		DryRun:      *dry,
+	})
+	if err != nil {
+		return err
+	}
+
+	if dir := strings.TrimSpace(*writeImage); dir != "" {
+		if err := gcp.WriteImageFiles(dir, plan.Image); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "wrote Dockerfile + entrypoint.sh → %s\n", dir)
+	}
+
+	printGCPPlan(plan, env.HFToken != "")
+
+	if *dry {
+		spec := gcp.OpenCodeSpec{
+			BaseURL: gcp.LocalOpenAIURL(gcp.ServerPort),
+			ModelID: modelID,
+			Source:  "gcp iap tunnel",
+		}
+		cfg := gcp.OpenCodeConfig(spec)
+		raw, _ := json.MarshalIndent(cfg, "", "  ")
+		fmt.Fprintln(os.Stdout)
+		heading(os.Stdout, "OpenCode (dry-run stdout, no apiKey)")
+		fmt.Println(string(raw))
+	}
+
+	if *dry {
+		if *asJSON {
+			return writeJSON(map[string]any{
+				"plan":       plan,
+				"dockerfile": plan.Dockerfile,
+				"entrypoint": plan.Entrypoint,
+				"opencode":   gcp.OpenCodeConfig(gcp.OpenCodeSpec{BaseURL: plan.OpenAIHint, ModelID: modelID, Source: "gcp"}),
+			})
+		}
+		fmt.Fprintln(os.Stdout)
+		heading(os.Stdout, "Dockerfile")
+		fmt.Println(plan.Dockerfile)
+		fmt.Fprintln(os.Stdout)
+		heading(os.Stdout, "entrypoint.sh")
+		fmt.Println(plan.Entrypoint)
+		fmt.Println(dim("dry-run: nothing created"))
+		return nil
+	}
+
+	if !*yes {
+		msg := fmt.Sprintf("Create Spot %s VM %s in %s/%s?", plan.Target.Name, plan.Name, plan.Project, plan.Zone)
+		if !confirm(msg) {
+			return fmt.Errorf("aborted")
+		}
+	}
+
+	if err := client.EnsureIAPFirewall(ctx, plan.Project); err != nil {
+		fmt.Fprintf(os.Stderr, "%s IAP firewall: %v (continuing)\n", yellow("warning:"), err)
+	}
+
+	createCtx, createCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer createCancel()
+	if err := client.Deploy(createCtx, plan, bearer, env.HFToken, !*noFallback); err != nil {
+		return err
+	}
+	if err := gcp.SaveBearer(plan.Name, bearer); err != nil {
+		fmt.Fprintf(os.Stderr, "%s saved VM but could not store bearer locally: %v\n", yellow("warning:"), err)
+	}
+
+	reg, _, err := store.Load()
+	if err != nil {
+		return err
+	}
+	reg.Put(store.Model{
+		HFRepo:    modelID,
+		Backend:   store.BackendGCP,
+		PodID:     plan.Name,
+		PodCloud:  "gcp",
+		GPUPool:   plan.Target.Name,
+		GPUCount:  1,
+		BaseURL:   gcp.LocalOpenAIURL(gcp.ServerPort),
+		ServeName: modelID,
+		Image:     "llama-server (generated)",
+		CreatedAt: time.Now().UTC(),
+		// Zone/project stashed in EndpointID / EndpointType for Phase 1 reuse.
+		EndpointID:   plan.Project,
+		EndpointType: plan.Zone,
+	})
+	reg.Current = modelID
+	if err := reg.Save(); err != nil {
+		fmt.Fprintf(os.Stderr, "%s registry write failed: %v\n", yellow("warning:"), err)
+	}
+
+	if *doOpenCode {
+		path, err := gcp.WriteProjectOpenCode(*openCodeDir, gcp.OpenCodeSpec{
+			BaseURL: gcp.LocalOpenAIURL(gcp.ServerPort),
+			ModelID: modelID,
+			Source:  "gcp iap tunnel",
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s opencode: %v\n", yellow("warning:"), err)
+		} else {
+			printKV(os.Stdout, "opencode", path+" (no apiKey)")
+		}
+	}
+
+	if *asJSON {
+		return writeJSON(map[string]any{
+			"provider":  "gcp",
+			"project":   plan.Project,
+			"zone":      plan.Zone,
+			"instance":  plan.Name,
+			"model":     modelID,
+			"gpu":       plan.Target.Name,
+			"openai":    plan.OpenAIHint,
+			"tunnel":    plan.TunnelHint,
+			"idle_sec":  plan.IdleSeconds,
+			"bearer_set": true,
+		})
+	}
+
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintf(os.Stdout, "%s  %s  (%s %s)\n", green("Created"), cyan(plan.Name), plan.Target.Name, "Spot")
+	printKV(os.Stdout, "project", plan.Project)
+	printKV(os.Stdout, "zone", plan.Zone)
+	printKV(os.Stdout, "model", bold(modelID))
+	printKV(os.Stdout, "openai", cyan(plan.OpenAIHint))
+	printKV(os.Stdout, "idle", fmt.Sprintf("%ds stop-on-idle", plan.IdleSeconds))
+	printKV(os.Stdout, "bearer", "stored under ~/.config/runhug/gcp/ (not in image)")
+	fmt.Fprintln(os.Stdout)
+	commands(os.Stdout, "Next:",
+		plan.TunnelHint,
+		"export OPENAI_API_KEY=$(cat ~/.config/runhug/gcp/"+plan.Name+".token)",
+		"curl -H \"Authorization: Bearer $OPENAI_API_KEY\" http://127.0.0.1:8080/v1/models",
+	)
+	return nil
+}
+
+func resolveGCPProject(ctx context.Context, client *gcp.Client, interactive bool) (string, error) {
+	if cur := client.CurrentProject(ctx); cur != "" {
+		if !interactive {
+			return cur, nil
+		}
+		ok := confirmPref(fmt.Sprintf("Use gcloud project %s?", cur), true)
+		if ok {
+			return cur, nil
+		}
+	}
+	if !interactive {
+		return "", fmt.Errorf("pass --project (or set gcloud config project)")
+	}
+	projects, err := client.ListProjects(ctx)
+	if err != nil {
+		return "", fmt.Errorf("list projects: %w (pass --project)", err)
+	}
+	if len(projects) == 0 {
+		return "", fmt.Errorf("no GCP projects visible — pass --project")
+	}
+	fmt.Fprintln(os.Stderr, bold("GCP projects"))
+	max := len(projects)
+	if max > 20 {
+		max = 20
+	}
+	for i := 0; i < max; i++ {
+		p := projects[i]
+		label := p.ProjectID
+		if p.Name != "" && p.Name != p.ProjectID {
+			label = fmt.Sprintf("%s (%s)", p.ProjectID, p.Name)
+		}
+		fmt.Fprintf(os.Stderr, "  %2d  %s\n", i+1, label)
+	}
+	line, err := readLine(fmt.Sprintf("Pick project [1-%d] or type project id: ", max))
+	if err != nil {
+		return "", err
+	}
+	line = strings.TrimSpace(line)
+	if n, err := strconv.Atoi(line); err == nil && n >= 1 && n <= max {
+		return projects[n-1].ProjectID, nil
+	}
+	if line == "" {
+		return "", fmt.Errorf("project required")
+	}
+	return line, nil
+}
+
+func printGCPPlan(plan *gcp.DeployPlan, hasHF bool) {
+	heading(os.Stdout, "Plan (GCP)")
+	printKV(os.Stdout, "provider", "gcp")
+	printKV(os.Stdout, "project", plan.Project)
+	printKV(os.Stdout, "zone", plan.Zone)
+	printKV(os.Stdout, "instance", plan.Name)
+	printKV(os.Stdout, "model", bold(plan.ModelID))
+	if plan.GGUFFile != "" {
+		printKV(os.Stdout, "gguf", plan.GGUFFile)
+	}
+	printKV(os.Stdout, "gpu", fmt.Sprintf("%s (%s) — %s", plan.Target.Name, plan.Target.MachineType, plan.Target.Reason))
+	printKV(os.Stdout, "idle", fmt.Sprintf("%ds stop-on-idle", plan.IdleSeconds))
+	printKV(os.Stdout, "bind", "127.0.0.1:"+strconv.Itoa(gcp.ServerPort)+" + IAP tunnel")
+	printKV(os.Stdout, "auth", "gcloud ADC + CLI Bearer (not in image)")
+	if hasHF {
+		printKV(os.Stdout, "hf_token", "set (metadata-from-file, not printed)")
+	}
+	printKV(os.Stdout, "gcloud", "gcloud "+strings.Join(plan.CreateArgs, " "))
+	fmt.Fprintln(os.Stdout)
+}
+
+func cmdGCPTunnel(args []string) error {
+	fs := newFlagSet("gcp tunnel")
+	project := fs.String("project", "", "GCP project")
+	zone := fs.String("zone", "", "GCE zone")
+	local := fs.Int("local-port", gcp.ServerPort, "local listen port")
+	remote := fs.Int("port", gcp.ServerPort, "remote llama-server port")
+	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+	name, proj, z, err := resolveGCPTarget(fs.Arg(0), *project, *zone)
+	if err != nil {
+		return err
+	}
+	client := gcp.NewClient()
+	ctx := context.Background()
+	if err := client.RequireADC(ctx); err != nil {
+		return err
+	}
+	if tok, err := gcp.LoadBearer(name); err == nil && tok != "" {
+		fmt.Fprintf(os.Stderr, "%s export OPENAI_API_KEY=%s\n", dim("→"), tok)
+		fmt.Fprintf(os.Stderr, "%s curl -H \"Authorization: Bearer $OPENAI_API_KEY\" %s/models\n", dim("→"), gcp.LocalOpenAIURL(*local))
+	} else {
+		fmt.Fprintf(os.Stderr, "%s no stored bearer for %s — pass Authorization manually\n", yellow("warning:"), name)
+	}
+	fmt.Fprintf(os.Stderr, "%s IAP tunnel %s → 127.0.0.1:%d\n", dim("→"), name, *local)
+	return client.StartTunnel(ctx, gcp.TunnelOpts{
+		Project:    proj,
+		Zone:       z,
+		Instance:   name,
+		RemotePort: *remote,
+		LocalPort:  *local,
+	})
+}
+
+func cmdGCPStop(args []string) error {
+	fs := newFlagSet("gcp stop")
+	project := fs.String("project", "", "GCP project")
+	zone := fs.String("zone", "", "GCE zone")
+	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+	name, proj, z, err := resolveGCPTarget(fs.Arg(0), *project, *zone)
+	if err != nil {
+		return err
+	}
+	client := gcp.NewClient()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if err := client.RequireADC(ctx); err != nil {
+		return err
+	}
+	return client.StopInstance(ctx, proj, z, name)
+}
+
+func cmdGCPDelete(args []string) error {
+	fs := newFlagSet("gcp delete")
+	project := fs.String("project", "", "GCP project")
+	zone := fs.String("zone", "", "GCE zone")
+	yes := fs.Bool("yes", false, "skip confirm")
+	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+	name, proj, z, err := resolveGCPTarget(fs.Arg(0), *project, *zone)
+	if err != nil {
+		return err
+	}
+	if !*yes && !confirm(fmt.Sprintf("Delete GCP instance %s?", name)) {
+		return fmt.Errorf("aborted")
+	}
+	client := gcp.NewClient()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	if err := client.RequireADC(ctx); err != nil {
+		return err
+	}
+	if err := client.DeleteInstance(ctx, proj, z, name); err != nil {
+		return err
+	}
+	reg, _, err := store.Load()
+	if err == nil {
+		for id, m := range reg.Models {
+			if m.Backend == store.BackendGCP && (m.PodID == name || id == name) {
+				reg.Remove(id)
+				_ = reg.Save()
+				break
+			}
+		}
+	}
+	fmt.Fprintf(os.Stdout, "%s deleted %s\n", green("OK"), name)
+	return nil
+}
+
+func cmdGCPStatus(args []string) error {
+	fs := newFlagSet("gcp status")
+	project := fs.String("project", "", "GCP project")
+	zone := fs.String("zone", "", "GCE zone")
+	asJSON := fs.Bool("json", false, "print JSON")
+	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+	name, proj, z, err := resolveGCPTarget(fs.Arg(0), *project, *zone)
+	if err != nil {
+		return err
+	}
+	client := gcp.NewClient()
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+	if err := client.RequireADC(ctx); err != nil {
+		return err
+	}
+	st, err := client.DescribeInstance(ctx, proj, z, name)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return writeJSON(st)
+	}
+	printKV(os.Stdout, "instance", st.Name)
+	printKV(os.Stdout, "status", st.Status)
+	printKV(os.Stdout, "zone", st.Zone)
+	printKV(os.Stdout, "project", proj)
+	return nil
+}
+
+func cmdGCPDockerfile(args []string) error {
+	fs := newFlagSet("gcp dockerfile")
+	model := fs.String("model", "", "optional MODEL_ID hint")
+	gguf := fs.String("gguf", "", "optional GGUF filename")
+	idle := fs.Int("idle-timeout", 600, "idle seconds")
+	outDir := fs.String("out", "", "write files to directory instead of stdout")
+	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() >= 1 && *model == "" {
+		*model = fs.Arg(0)
+	}
+	cfg := gcp.ImageConfig{ModelID: *model, GGUFFile: *gguf, IdleSeconds: *idle}
+	if dir := strings.TrimSpace(*outDir); dir != "" {
+		if err := gcp.WriteImageFiles(dir, cfg); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stdout, "wrote %s\n", filepath.Join(dir, "Dockerfile"))
+		fmt.Fprintf(os.Stdout, "wrote %s\n", filepath.Join(dir, "entrypoint.sh"))
+		return nil
+	}
+	fmt.Println(gcp.Dockerfile(cfg))
+	fmt.Println("---")
+	fmt.Println(gcp.EntrypointScript(cfg))
+	return nil
+}
+
+func cmdGCPOpenCode(args []string) error {
+	fs := newFlagSet("gcp opencode")
+	dir := fs.String("dir", ".", "project directory")
+	base := fs.String("base-url", gcp.LocalOpenAIURL(gcp.ServerPort), "OpenAI base URL")
+	model := fs.String("model", "", "model id")
+	dry := fs.Bool("dry-run", false, "print JSON to stdout only")
+	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() >= 1 && *model == "" {
+		*model = fs.Arg(0)
+	}
+	if strings.TrimSpace(*model) == "" {
+		reg, _, err := store.Load()
+		if err == nil {
+			if m, ok := reg.Lookup(""); ok && m.Backend == store.BackendGCP {
+				*model = m.HFRepo
+			}
+		}
+	}
+	if strings.TrimSpace(*model) == "" {
+		return fmt.Errorf("pass a model id: runhug gcp opencode <org/model>")
+	}
+	spec := gcp.OpenCodeSpec{BaseURL: *base, ModelID: *model, Source: "gcp iap tunnel"}
+	cfg := gcp.OpenCodeConfig(spec)
+	if *dry {
+		raw, err := json.MarshalIndent(cfg, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(raw))
+		return nil
+	}
+	path, err := gcp.WriteProjectOpenCode(*dir, spec)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stdout, "%s %s (no apiKey field)\n", green("wrote"), path)
+	return nil
+}
+
+// resolveGCPTarget resolves instance/project/zone from args + registry.
+func resolveGCPTarget(nameArg, projectFlag, zoneFlag string) (name, project, zone string, err error) {
+	name = strings.TrimSpace(nameArg)
+	project = strings.TrimSpace(projectFlag)
+	zone = strings.TrimSpace(zoneFlag)
+
+	reg, _, loadErr := store.Load()
+	if loadErr == nil {
+		if name == "" {
+			if m, ok := reg.Lookup(""); ok && m.Backend == store.BackendGCP {
+				name = m.PodID
+				if project == "" {
+					project = m.EndpointID
+				}
+				if zone == "" {
+					zone = m.EndpointType
+				}
+			}
+		} else if m, ok := reg.Lookup(name); ok && m.Backend == store.BackendGCP {
+			if name == m.HFRepo {
+				name = m.PodID
+			}
+			if project == "" {
+				project = m.EndpointID
+			}
+			if zone == "" {
+				zone = m.EndpointType
+			}
+		} else {
+			// try pod id match
+			for _, m := range reg.Models {
+				if m.Backend == store.BackendGCP && m.PodID == name {
+					if project == "" {
+						project = m.EndpointID
+					}
+					if zone == "" {
+						zone = m.EndpointType
+					}
+					break
+				}
+			}
+		}
+	}
+
+	if name == "" {
+		return "", "", "", fmt.Errorf("instance name required (or deploy first)")
+	}
+	if project == "" {
+		if cur := gcp.NewClient().CurrentProject(context.Background()); cur != "" {
+			project = cur
+		}
+	}
+	if project == "" {
+		return "", "", "", fmt.Errorf("pass --project")
+	}
+	if zone == "" {
+		_, zone = gcp.ZoneFromRegion("", "")
+	}
+	return name, project, zone, nil
+}

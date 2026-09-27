@@ -48,6 +48,8 @@ func Run(args []string) error {
 		return cmdIndexInfo(rest)
 	case "deploy":
 		return cmdDeploy(rest)
+	case "gcp":
+		return cmdGCP(rest)
 	case "heretic":
 		return cmdHeretic(rest)
 	case "local":
@@ -103,10 +105,12 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  inspect <model>    hub card + vram estimate")
 	fmt.Fprintln(w, "  update             refresh index")
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, bold("runpod"))
-	fmt.Fprintln(w, "  deploy <model>     serverless vllm")
+	fmt.Fprintln(w, bold("deploy"))
+	fmt.Fprintln(w, "  deploy <model>     serverless vllm (runpod, default)")
+	fmt.Fprintln(w, "  deploy --provider gcp   Spot L4/T4 llama.cpp (or: gcp deploy)")
+	fmt.Fprintln(w, "  gcp                GCP GPU provider (deploy|tunnel|status|…)")
 	fmt.Fprintln(w, "  heretic make <m>   abliteration training pod + dashboard")
-	fmt.Fprintln(w, "  list               local registry + runpod")
+	fmt.Fprintln(w, "  list               local registry + providers")
 	fmt.Fprintln(w, "  proxy              openai proxy :8080/v1")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, bold("chat & agents"))

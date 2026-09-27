@@ -37,6 +37,7 @@ func TestUsageMentionsSearch(t *testing.T) {
 		"connect hf",
 		"disconnect",
 		"deploy",
+		"gcp",
 		"list",
 		"proxy",
 		"local add",
