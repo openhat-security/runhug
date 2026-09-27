@@ -26,6 +26,7 @@ jobs:
         env:
           INPUT_TAG: ${{ github.event.inputs.tag }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           TAG="${INPUT_TAG:-}"
@@ -35,8 +36,6 @@ jobs:
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Using tag $TAG"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download deb/rpm assets
         env:
