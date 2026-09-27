@@ -5,7 +5,7 @@
 # Usage: curl -fsSL …/scripts/install.sh | bash
 set -euo pipefail
 
-REPO="adamsiwiec1/runhug"
+REPO="${RUNHUG_REPO:-openhat-security/runhug}"
 # Optional: TAG=v0.1.3 or VERSION=0.1.3 to pin a release (default: latest)
 # Prefer new asset names; fall back to pre-rename prefix for older releases.
 ASSET_PREFIXES=("runhug_" "runhug-cli_")

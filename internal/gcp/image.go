@@ -19,7 +19,10 @@ type ImageConfig struct {
 	// Port is the llama-server listen port (default 8080).
 	Port int
 	// IdleSeconds after last request before the entrypoint stops the VM.
+	// 0 with KeepUp=true means never auto-stop.
 	IdleSeconds int
+	// KeepUp disables the idle watcher (IdleSeconds forced to 0).
+	KeepUp bool
 	// Context tokens for llama-server (-c).
 	Context int
 	// GPULayers (-ngl); -1 = all.
@@ -30,11 +33,14 @@ func (c ImageConfig) withDefaults() ImageConfig {
 	if c.Port <= 0 {
 		c.Port = ServerPort
 	}
-	if c.IdleSeconds <= 0 {
+	if c.KeepUp {
+		c.IdleSeconds = 0
+	} else if c.IdleSeconds <= 0 {
 		c.IdleSeconds = 600 // 10m stop-on-idle
 	}
 	if c.Context <= 0 {
-		c.Context = 8192
+		// OpenCode agent prompts routinely exceed 8k; 32k fits Qwen-class GGUFs.
+		c.Context = 32768
 	}
 	if c.GPULayers == 0 {
 		c.GPULayers = -1
@@ -193,38 +199,42 @@ fi
 llama-server "${ARGS[@]}" &
 SERVER_PID=$!
 
-LAST_OK="$(date +%s)"
-echo "$LAST_OK" >/tmp/runhug-last-request
-(
-  while kill -0 "$SERVER_PID" 2>/dev/null; do
-    now="$(date +%s)"
-    peers="$(ss -tn "sport = :${PORT}" state established 2>/dev/null | awk 'NR>1{c++} END{print c+0}')"
-    peers="${peers:-0}"
-    if [[ "$peers" -gt 0 ]]; then
-      LAST_OK="$now"
-      echo "$now" >/tmp/runhug-last-request
-    fi
-    if [[ $((now - LAST_OK)) -ge "$IDLE_SECONDS" ]]; then
-      echo "runhug: idle ${IDLE_SECONDS}s — stopping VM" >&2
-      kill "$SERVER_PID" 2>/dev/null || true
-      # Prefer GCE Stop API (create-with-container; no host privileged shutdown needed).
-      TOK="$(curl -sf -H "Metadata-Flavor: Google" "$META_BASE/instance/service-accounts/default/token" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null || true)"
-      PROJ="$(curl -sf -H "Metadata-Flavor: Google" "$META_BASE/project/project-id" 2>/dev/null || true)"
-      ZONE="$(curl -sf -H "Metadata-Flavor: Google" "$META_BASE/instance/zone" 2>/dev/null | awk -F/ '{print $NF}' || true)"
-      NAME="$(curl -sf -H "Metadata-Flavor: Google" "$META_BASE/instance/name" 2>/dev/null || true)"
-      if [[ -n "$TOK" && -n "$PROJ" && -n "$ZONE" && -n "$NAME" ]]; then
-        curl -sf -X POST -H "Authorization: Bearer $TOK" \
-          "https://compute.googleapis.com/compute/v1/projects/${PROJ}/zones/${ZONE}/instances/${NAME}/stop" >/dev/null || true
-      elif command -v shutdown >/dev/null 2>&1; then
-        shutdown -h now || poweroff || true
-      else
-        poweroff || true
+# IDLE_SECONDS <= 0 (keep-up): no auto-stop — operator must runhug gcp stop.
+if [[ "${IDLE_SECONDS}" =~ ^[0-9]+$ ]] && [[ "$IDLE_SECONDS" -gt 0 ]]; then
+  LAST_OK="$(date +%s)"
+  echo "$LAST_OK" >/tmp/runhug-last-request
+  (
+    while kill -0 "$SERVER_PID" 2>/dev/null; do
+      now="$(date +%s)"
+      peers="$(ss -tn "sport = :${PORT}" state established 2>/dev/null | awk 'NR>1{c++} END{print c+0}')"
+      peers="${peers:-0}"
+      if [[ "$peers" -gt 0 ]]; then
+        LAST_OK="$now"
+        echo "$now" >/tmp/runhug-last-request
       fi
-      exit 0
-    fi
-    sleep 15
-  done
-) &
+      if [[ $((now - LAST_OK)) -ge "$IDLE_SECONDS" ]]; then
+        echo "runhug: idle ${IDLE_SECONDS}s — stopping VM" >&2
+        kill "$SERVER_PID" 2>/dev/null || true
+        TOK="$(curl -sf -H "Metadata-Flavor: Google" "$META_BASE/instance/service-accounts/default/token" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null || true)"
+        PROJ="$(curl -sf -H "Metadata-Flavor: Google" "$META_BASE/project/project-id" 2>/dev/null || true)"
+        ZONE="$(curl -sf -H "Metadata-Flavor: Google" "$META_BASE/instance/zone" 2>/dev/null | awk -F/ '{print $NF}' || true)"
+        NAME="$(curl -sf -H "Metadata-Flavor: Google" "$META_BASE/instance/name" 2>/dev/null || true)"
+        if [[ -n "$TOK" && -n "$PROJ" && -n "$ZONE" && -n "$NAME" ]]; then
+          curl -sf -X POST -H "Authorization: Bearer $TOK" \
+            "https://compute.googleapis.com/compute/v1/projects/${PROJ}/zones/${ZONE}/instances/${NAME}/stop" >/dev/null || true
+        elif command -v shutdown >/dev/null 2>&1; then
+          shutdown -h now || poweroff || true
+        else
+          poweroff || true
+        fi
+        exit 0
+      fi
+      sleep 15
+    done
+  ) &
+else
+  echo "runhug: keep-up — stop-on-idle disabled (runhug gcp stop when done)" >&2
+fi
 
 wait "$SERVER_PID"
 `
@@ -327,7 +337,7 @@ docker pull "$IMAGE"
 NAME="runhug-llama"
 docker rm -f "$NAME" 2>/dev/null || true
 
-ENV_ARGS=(-e HOST=127.0.0.1 -e PORT=8080 -e IDLE_SECONDS="$IDLE_SECONDS" -e CONTEXT=8192 -e NGL=-1)
+ENV_ARGS=(-e HOST=127.0.0.1 -e PORT=8080 -e IDLE_SECONDS="$IDLE_SECONDS" -e CONTEXT=32768 -e NGL=-1)
 if [[ -n "$MODEL_ID" ]]; then ENV_ARGS+=(-e "MODEL_ID=$MODEL_ID"); fi
 if [[ -n "$GGUF_FILE" ]]; then ENV_ARGS+=(-e "GGUF_FILE=$GGUF_FILE"); fi
 

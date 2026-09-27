@@ -17,16 +17,20 @@ type DeployRequest struct {
 	GGUFFile    string
 	GPU         string // L4 | T4 | empty=L4 then caller may retry T4
 	IdleSeconds int
-	DiskGB      int
-	HFToken     string // optional; metadata-from-file only
-	Bearer      string // CLI-managed; metadata-from-file only
-	DryRun      bool
+	// KeepUp disables stop-on-idle (IdleSeconds forced to 0). Bills until gcp stop.
+	KeepUp  bool
+	DiskGB  int
+	HFToken string // optional; metadata-from-file only
+	Bearer  string // CLI-managed; metadata-from-file only
+	DryRun  bool
 	// ContainerImage is the prebuilt llama-server image (Artifact Registry / GCR).
 	// Required for live create; dry-run may use a printable placeholder.
 	ContainerImage string
 	// PublicIP adds an ephemeral external IP (dogfood egress). Default false =
 	// no-address (needs Cloud NAT for image pull / HF download).
 	PublicIP bool
+	// WeightGB optional GGUF size hint for cost/cold-start projection.
+	WeightGB float64
 }
 
 // DeployPlan is the printable / executable plan.
@@ -39,12 +43,14 @@ type DeployPlan struct {
 	GGUFFile       string      `json:"gguf_file,omitempty"`
 	Target         GPUTarget   `json:"target"`
 	IdleSeconds    int         `json:"idle_seconds"`
+	KeepUp         bool        `json:"keep_up"`
 	Image          ImageConfig `json:"image"`
 	ContainerImage string      `json:"container_image"`
 	PublicIP       bool        `json:"public_ip"`
+	Cost           SpotCost    `json:"cost"`
 	Dockerfile     string      `json:"-"`
 	Entrypoint     string      `json:"-"`
-	Startup        string      `json:"-"` // deprecated stub; create-with-container owns boot
+	Startup        string      `json:"-"` // docker launcher on Spot DLVM
 	// CreateArgs is safe to print (secrets redacted / placeholders).
 	CreateArgs   []string `json:"create_args"`
 	FirewallArgs []string `json:"firewall_args,omitempty"`
@@ -73,8 +79,11 @@ func BuildPlan(req DeployRequest) (*DeployPlan, error) {
 	if req.DiskGB > 0 {
 		target.DiskGB = req.DiskGB
 	}
+	keepUp := req.KeepUp
 	idle := req.IdleSeconds
-	if idle <= 0 {
+	if keepUp {
+		idle = 0
+	} else if idle <= 0 {
 		idle = 600
 	}
 	img := ImageConfig{
@@ -82,6 +91,7 @@ func BuildPlan(req DeployRequest) (*DeployPlan, error) {
 		GGUFFile:    strings.TrimSpace(req.GGUFFile),
 		Port:        ServerPort,
 		IdleSeconds: idle,
+		KeepUp:      keepUp,
 	}
 	if strings.TrimSpace(req.Bearer) == "" {
 		return nil, fmt.Errorf("internal: Bearer required before BuildPlan (CLI GenerateBearer)")
@@ -102,9 +112,11 @@ func BuildPlan(req DeployRequest) (*DeployPlan, error) {
 		GGUFFile:       img.GGUFFile,
 		Target:         target,
 		IdleSeconds:    idle,
+		KeepUp:         keepUp,
 		Image:          img,
 		ContainerImage: containerImage,
 		PublicIP:       req.PublicIP,
+		Cost:           EstimateSpotCost(target, idle, keepUp, req.WeightGB),
 		Dockerfile:     Dockerfile(img),
 		Entrypoint:     EntrypointScript(img),
 		Startup:        StartupScript(img),

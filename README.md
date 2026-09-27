@@ -42,16 +42,24 @@ Other useful commands: `inspect`, `update` / `update --packs`, `gpus`, `url`, `s
 
 ## Install
 
+**npm** (Node ≥ 18):
+
+```bash
+npm install -g runhug
+# or
+npx runhug wizard
+```
+
 **macOS / Linux:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/adamsiwiec1/runhug/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/openhat-security/runhug/main/scripts/install.sh | bash
 ```
 
 **Windows (amd64, PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/adamsiwiec1/runhug/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/openhat-security/runhug/main/scripts/install.ps1 | iex
 ```
 
 **Go** (optional):
@@ -60,7 +68,7 @@ irm https://raw.githubusercontent.com/adamsiwiec1/runhug/main/scripts/install.ps
 go install github.com/adamsiwiec1/runhug/cmd/runhug@latest
 ```
 
-Scripts detect OS/arch, fetch the latest GitHub Release binary (`runhug_<ver>_…`, falling back to legacy `runhug-cli_` assets), and install as `runhug` / `runhug.exe`. Releases: [github.com/adamsiwiec1/runhug/releases](https://github.com/adamsiwiec1/runhug/releases).
+npm / install scripts detect OS/arch and fetch the latest GitHub Release binary (`runhug_<ver>_…`, falling back to legacy `runhug-cli_` assets). Releases: [github.com/openhat-security/runhug/releases](https://github.com/openhat-security/runhug/releases).
 
 From source: `git clone … && go build -o bin/runhug ./cmd/runhug`.
 

@@ -1,0 +1,48 @@
+{
+  "name": "runhug",
+  "version": "0.1.7",
+  "description": "Find the best model. Deploy it in minutes. Run it for pennies.",
+  "keywords": [
+    "runhug",
+    "llm",
+    "runpod",
+    "gcp",
+    "cli",
+    "openai-compatible",
+    "huggingface"
+  ],
+  "homepage": "https://github.com/openhat-security/runhug",
+  "bugs": {
+    "url": "https://github.com/openhat-security/runhug/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openhat-security/runhug.git",
+    "directory": "npm"
+  },
+  "license": "MIT",
+  "author": "OpenHat Security",
+  "bin": {
+    "runhug": "bin/runhug"
+  },
+  "files": [
+    "bin/",
+    "install.js",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}

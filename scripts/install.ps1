@@ -1,9 +1,9 @@
-# Install the latest runhug Windows amd64 release from adamsiwiec1/runhug.
+# Install the latest runhug Windows amd64 release from openhat-security/runhug.
 # Next release asset: runhug_<ver>_windows_amd64.exe → runhug.exe
 # Fallback: older tags may still publish runhug-cli_<ver>_windows_amd64.exe
-# Usage: irm https://raw.githubusercontent.com/adamsiwiec1/runhug/main/scripts/install.ps1 | iex
+# Usage: irm https://raw.githubusercontent.com/openhat-security/runhug/main/scripts/install.ps1 | iex
 $ErrorActionPreference = "Stop"
-$Repo = "adamsiwiec1/runhug"
+$Repo = if ($env:RUNHUG_REPO) { $env:RUNHUG_REPO } else { "openhat-security/runhug" }
 $AssetPrefixes = @("runhug_", "runhug-cli_")
 $BinName = "runhug.exe"
 

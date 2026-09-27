@@ -15,7 +15,10 @@ const (
 
 	DefaultZone   = "us-central1-a"
 	DefaultRegion = "us-central1"
-	ServerPort    = 8080
+	ServerPort = 8080
+	// LocalTunnelPort is the recommended host-side listen port for `gcp tunnel`
+	// (avoids colliding with a local :8080). OpenCode wiring uses this port.
+	LocalTunnelPort = 18080
 )
 
 // GPUTarget describes a Spot GPU machine configuration.

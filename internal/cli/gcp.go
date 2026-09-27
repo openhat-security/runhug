@@ -74,14 +74,16 @@ flags for deploy:
   --zone <zone>        default us-central1-a
   --region <region>    used when --zone omitted
   --gpu L4|T4          default L4 (T4 auto-fallback on create failure)
-  --idle-timeout <sec> stop-on-idle seconds (default 600)
+  --idle-timeout <sec> stop-on-idle seconds (default 600; ignored with --keep-up)
+  --keep-up            disable stop-on-idle (bills until runhug gcp stop); prompts y/N unless --yes
   --name <instance>    GCE instance name
   --gguf <file>        preferred .gguf filename in the repo
   --disk <gb>          boot disk (default 200)
   --image <ref>        prebuilt container image (Artifact Registry / GCR); required for live create
   --public-ip          dogfood: ephemeral external IP (default is no-address + Cloud NAT)
   --write-image <dir>  write Dockerfile + entrypoint.sh
-  --opencode           merge project .opencode/opencode.json (no apiKey)
+  --opencode           merge project .opencode/opencode.json (apiKey env ref only)
+  --estimate, -e       always print full cost block (also shown on dry-run / create)
   --yes, --dry-run, --json
 
 flags for push:
@@ -92,7 +94,7 @@ flags for push:
   --platform <plat>    default linux/amd64
   --dry-run            print docker build/push commands only
 
-soft locks: gcloud ADC · Bearer + 127.0.0.1 + IAP · stop-on-idle · OpenCode client-side only
+soft locks: gcloud ADC · Bearer + 127.0.0.1 + SSH tunnel · stop-on-idle (unless keep-up) · OpenCode env apiKey only
 `
 }
 
@@ -107,15 +109,18 @@ func cmdGCPDeploy(args []string) error {
 	region := fs.String("region", "", "GCE region")
 	gpu := fs.String("gpu", "", "L4 (default) or T4")
 	idle := fs.Int("idle-timeout", 600, "seconds before stop-on-idle")
+	keepUpFlag := fs.Bool("keep-up", false, "disable stop-on-idle (bills until gcp stop)")
 	name := fs.String("name", "", "instance name")
 	gguf := fs.String("gguf", "", "preferred GGUF filename")
 	disk := fs.Int("disk", 0, "boot disk GB")
 	writeImage := fs.String("write-image", "", "write Dockerfile+entrypoint to dir")
-	doOpenCode := fs.Bool("opencode", false, "merge project .opencode/opencode.json (no apiKey)")
+	doOpenCode := fs.Bool("opencode", false, "merge project .opencode/opencode.json (OPENAI_API_KEY env ref)")
 	openCodeDir := fs.String("opencode-dir", ".", "project dir for .opencode/opencode.json")
 	noFallback := fs.Bool("no-fallback", false, "do not fall back from L4 to T4")
 	containerImage := fs.String("image", "", "prebuilt container image (Artifact Registry / GCR)")
 	publicIP := fs.Bool("public-ip", false, "dogfood: ephemeral external IP (default no-address + Cloud NAT)")
+	estimate := fs.Bool("estimate", false, "print full cost block")
+	fs.BoolVar(estimate, "e", false, "alias for --estimate")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -169,6 +174,7 @@ func cmdGCPDeploy(args []string) error {
 	// Resolve Hub card when possible (prefer GGUF).
 	hctx, hcancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer hcancel()
+	var weightGB float64
 	model, err := hf.New(env.HFToken).Get(hctx, modelID)
 	if err != nil {
 		if !*dry {
@@ -188,6 +194,25 @@ func cmdGCPDeploy(args []string) error {
 		}
 		if model.IsGated() && env.HFToken == "" {
 			return fmt.Errorf("%s is gated; set HF_TOKEN (passed as instance metadata, not baked into the image)", modelID)
+		}
+		weightGB = gcpWeightGB(*model, ggufFile)
+	}
+
+	keepUp := *keepUpFlag
+	if !*dry && !*yes && promptOK() {
+		rate := gcp.SpotHourlyL4
+		if strings.EqualFold(strings.TrimSpace(*gpu), "T4") {
+			rate = gcp.SpotHourlyT4
+		}
+		warn := fmt.Sprintf("Keep Spot VM up with NO stop-on-idle? Bills ~$%.2f/hr until you run runhug gcp stop", rate)
+		if *keepUpFlag {
+			// Explicit --keep-up still requires an interactive billing ack unless --yes.
+			if !confirmPref(warn+"?", false) {
+				return fmt.Errorf("aborted: keep-up not confirmed (pass --yes to skip)")
+			}
+			keepUp = true
+		} else if confirmPref(warn+"?", false) {
+			keepUp = true
 		}
 	}
 
@@ -213,12 +238,14 @@ func cmdGCPDeploy(args []string) error {
 		GGUFFile:       ggufFile,
 		GPU:            *gpu,
 		IdleSeconds:    *idle,
+		KeepUp:         keepUp,
 		DiskGB:         *disk,
 		Bearer:         bearer,
 		HFToken:        env.HFToken,
 		DryRun:         *dry,
 		ContainerImage: imgRef,
 		PublicIP:       *publicIP,
+		WeightGB:       weightGB,
 	})
 	if err != nil {
 		return err
@@ -231,18 +258,18 @@ func cmdGCPDeploy(args []string) error {
 		fmt.Fprintf(os.Stderr, "wrote Dockerfile + entrypoint.sh → %s\n", dir)
 	}
 
-	printGCPPlan(plan, env.HFToken != "")
+	printGCPPlan(plan, env.HFToken != "", *estimate || *dry || !*yes)
 
 	if *dry {
 		spec := gcp.OpenCodeSpec{
 			BaseURL: gcp.LocalOpenAIURL(gcp.ServerPort),
 			ModelID: modelID,
-			Source:  "gcp iap tunnel",
+			Source:  "gcp ssh tunnel",
 		}
 		cfg := gcp.OpenCodeConfig(spec)
 		raw, _ := json.MarshalIndent(cfg, "", "  ")
 		fmt.Fprintln(os.Stdout)
-		heading(os.Stdout, "OpenCode (dry-run stdout, no apiKey)")
+		heading(os.Stdout, "OpenCode (dry-run stdout, apiKey env ref only)")
 		fmt.Println(string(raw))
 	}
 
@@ -266,7 +293,8 @@ func cmdGCPDeploy(args []string) error {
 	}
 
 	if !*yes {
-		msg := fmt.Sprintf("Create Spot %s VM %s in %s/%s?", plan.Target.Name, plan.Name, plan.Project, plan.Zone)
+		msg := fmt.Sprintf("Create Spot %s VM %s in %s/%s (~%s/hr while up)?",
+			plan.Target.Name, plan.Name, plan.Project, plan.Zone, fmt.Sprintf("$%.2f", plan.Cost.HourlyUSD))
 		if !confirm(msg) {
 			return fmt.Errorf("aborted")
 		}
@@ -296,9 +324,10 @@ func cmdGCPDeploy(args []string) error {
 		PodCloud:  "gcp",
 		GPUPool:   plan.Target.Name,
 		GPUCount:  1,
-		BaseURL:   gcp.LocalOpenAIURL(gcp.ServerPort),
+		BaseURL:   gcp.LocalOpenAIURL(gcp.LocalTunnelPort),
 		ServeName: modelID,
 		Image:     plan.ContainerImage,
+		HourlyUSD: plan.Cost.HourlyUSD,
 		CreatedAt: time.Now().UTC(),
 		// Zone/project stashed in EndpointID / EndpointType for Phase 1 reuse.
 		EndpointID:   plan.Project,
@@ -311,47 +340,59 @@ func cmdGCPDeploy(args []string) error {
 
 	if *doOpenCode {
 		path, err := gcp.WriteProjectOpenCode(*openCodeDir, gcp.OpenCodeSpec{
-			BaseURL: gcp.LocalOpenAIURL(gcp.ServerPort),
+			BaseURL: gcp.LocalOpenAIURL(gcp.LocalTunnelPort),
 			ModelID: modelID,
-			Source:  "gcp iap tunnel",
+			Source:  "gcp ssh tunnel",
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s opencode: %v\n", yellow("warning:"), err)
 		} else {
-			printKV(os.Stdout, "opencode", path+" (no apiKey)")
+			printKV(os.Stdout, "opencode", path+` (apiKey={env:OPENAI_API_KEY})`)
 		}
 	}
 
 	if *asJSON {
 		return writeJSON(map[string]any{
-			"provider":  "gcp",
-			"project":   plan.Project,
-			"zone":      plan.Zone,
-			"instance":  plan.Name,
-			"model":     modelID,
-			"gpu":       plan.Target.Name,
-			"openai":    plan.OpenAIHint,
-			"tunnel":    plan.TunnelHint,
-			"idle_sec":  plan.IdleSeconds,
+			"provider":   "gcp",
+			"project":    plan.Project,
+			"zone":       plan.Zone,
+			"instance":   plan.Name,
+			"model":      modelID,
+			"gpu":        plan.Target.Name,
+			"openai":     plan.OpenAIHint,
+			"tunnel":     plan.TunnelHint,
+			"idle_sec":   plan.IdleSeconds,
+			"keep_up":    plan.KeepUp,
+			"hourly_usd": plan.Cost.HourlyUSD,
 			"bearer_set": true,
 		})
 	}
 
 	fmt.Fprintln(os.Stdout)
-	fmt.Fprintf(os.Stdout, "%s  %s  (%s %s)\n", green("Created"), cyan(plan.Name), plan.Target.Name, "Spot")
+	fmt.Fprintf(os.Stdout, "%s  %s  (%s Spot ~%s/hr)\n", green("Created"), cyan(plan.Name), plan.Target.Name, fmt.Sprintf("$%.2f", plan.Cost.HourlyUSD))
 	printKV(os.Stdout, "project", plan.Project)
 	printKV(os.Stdout, "zone", plan.Zone)
 	printKV(os.Stdout, "model", bold(modelID))
 	printKV(os.Stdout, "openai", cyan(plan.OpenAIHint))
-	printKV(os.Stdout, "idle", fmt.Sprintf("%ds stop-on-idle", plan.IdleSeconds))
+	if plan.KeepUp {
+		printKV(os.Stdout, "idle", yellow("keep-up — NO stop-on-idle; runhug gcp stop when done"))
+	} else {
+		printKV(os.Stdout, "idle", fmt.Sprintf("%ds stop-on-idle", plan.IdleSeconds))
+	}
 	printKV(os.Stdout, "bearer", "stored under ~/.config/runhug/gcp/ (not in image)")
 	fmt.Fprintln(os.Stdout)
 	commands(os.Stdout, "Next:",
-		plan.TunnelHint,
+		fmt.Sprintf("%s --local-port %d", plan.TunnelHint, gcp.LocalTunnelPort),
 		"export OPENAI_API_KEY=$(cat ~/.config/runhug/gcp/"+plan.Name+".token)",
-		"curl -H \"Authorization: Bearer $OPENAI_API_KEY\" http://127.0.0.1:8080/v1/models",
+		fmt.Sprintf("curl -H \"Authorization: Bearer $OPENAI_API_KEY\" %s/models", gcp.LocalOpenAIURL(gcp.LocalTunnelPort)),
+		"runhug gcp stop "+plan.Name+" --project "+plan.Project+" --zone "+plan.Zone,
 	)
 	return nil
+}
+
+func gcpWeightGB(m hf.Model, _ string) float64 {
+	est := inspectEstimate(m, hf.DetectFormat(m), 8192)
+	return est.WeightGB
 }
 
 func resolveGCPProject(ctx context.Context, client *gcp.Client, interactive bool) (string, error) {
@@ -401,7 +442,7 @@ func resolveGCPProject(ctx context.Context, client *gcp.Client, interactive bool
 	return line, nil
 }
 
-func printGCPPlan(plan *gcp.DeployPlan, hasHF bool) {
+func printGCPPlan(plan *gcp.DeployPlan, hasHF bool, showCost bool) {
 	heading(os.Stdout, "Plan (GCP)")
 	printKV(os.Stdout, "provider", "gcp")
 	printKV(os.Stdout, "project", plan.Project)
@@ -412,7 +453,12 @@ func printGCPPlan(plan *gcp.DeployPlan, hasHF bool) {
 		printKV(os.Stdout, "gguf", plan.GGUFFile)
 	}
 	printKV(os.Stdout, "gpu", fmt.Sprintf("%s (%s) — %s", plan.Target.Name, plan.Target.MachineType, plan.Target.Reason))
-	printKV(os.Stdout, "idle", fmt.Sprintf("%ds stop-on-idle", plan.IdleSeconds))
+	printKV(os.Stdout, "cost", plan.Cost.CompactLine())
+	if plan.KeepUp {
+		printKV(os.Stdout, "idle", yellow("keep-up — NO stop-on-idle"))
+	} else {
+		printKV(os.Stdout, "idle", fmt.Sprintf("%ds stop-on-idle", plan.IdleSeconds))
+	}
 	printKV(os.Stdout, "bind", "127.0.0.1:"+strconv.Itoa(gcp.ServerPort)+" + SSH tunnel")
 	printKV(os.Stdout, "container", plan.ContainerImage)
 	net := "no-address (need Cloud NAT)"
@@ -425,6 +471,12 @@ func printGCPPlan(plan *gcp.DeployPlan, hasHF bool) {
 		printKV(os.Stdout, "hf_token", "set (metadata-from-file, not printed)")
 	}
 	printKV(os.Stdout, "gcloud", "gcloud "+strings.Join(plan.CreateArgs, " "))
+	if showCost {
+		fmt.Fprintln(os.Stdout)
+		fmt.Fprintln(os.Stdout, bold(plan.Cost.FormatBlock()))
+	} else {
+		fmt.Fprintln(os.Stdout, dim("Tip: pass --estimate / -e for the full Spot cost block."))
+	}
 	fmt.Fprintln(os.Stdout)
 }
 
@@ -657,7 +709,7 @@ func cmdGCPOpenCode(args []string) error {
 	if strings.TrimSpace(*model) == "" {
 		return fmt.Errorf("pass a model id: runhug gcp opencode <org/model>")
 	}
-	spec := gcp.OpenCodeSpec{BaseURL: *base, ModelID: *model, Source: "gcp iap tunnel"}
+	spec := gcp.OpenCodeSpec{BaseURL: *base, ModelID: *model, Source: "gcp ssh tunnel"}
 	cfg := gcp.OpenCodeConfig(spec)
 	if *dry {
 		raw, err := json.MarshalIndent(cfg, "", "  ")

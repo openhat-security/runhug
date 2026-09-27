@@ -6,6 +6,7 @@
 *.test
 coverage.out
 node_modules/
+npm/vendor/
 __pycache__/
 *.pyc
 .scratch/

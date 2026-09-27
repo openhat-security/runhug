@@ -40,7 +40,7 @@ func TestEntrypointSoftLocks(t *testing.T) {
 	for _, want := range []string{
 		"127.0.0.1", "--api-key", "IDLE_SECONDS", "shutdown", "runhug-api-key",
 		"runhug-hf-token", "runhug-model-id", "runhug-gguf-file",
-		"hf \"", "instances/", "/stop",
+		"hf \"", "instances/", "/stop", "keep-up",
 	} {
 		if !strings.Contains(ep, want) {
 			t.Fatalf("entrypoint missing %q", want)
@@ -49,6 +49,13 @@ func TestEntrypointSoftLocks(t *testing.T) {
 	// Must not embed a concrete bearer.
 	if strings.Contains(ep, "rh_") {
 		t.Fatal("entrypoint unexpectedly contains rh_ bearer prefix")
+	}
+}
+
+func TestEntrypointKeepUpSkipsIdleStop(t *testing.T) {
+	ep := EntrypointScript(ImageConfig{KeepUp: true, IdleSeconds: 0})
+	if !strings.Contains(ep, "stop-on-idle disabled") {
+		t.Fatal("expected keep-up message")
 	}
 }
 

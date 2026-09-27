@@ -19,13 +19,27 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-09-27
+
 ### Added
-- **GCP GPU provider (Phase 1):** `runhug gcp deploy|tunnel|status|stop|delete|dockerfile|push|opencode` and `runhug deploy --provider gcp`. Use-time GCP project + HF/GGUF model pick (never hardcoded). Thin-wraps `ghcr.io/ggml-org/llama.cpp:server-cuda` (Dockerfile/entrypoint; no ADC/SA/Bearer baked in); `runhug gcp push` does local `docker build --platform linux/amd64` + push (no Cloud Build). Spot L4 (T4 fallback) DLVM runs `docker pull` + `docker run` (GCP discontinued `create-with-container`) + stop-on-idle; OpenAI `/v1` on `127.0.0.1` via SSH local-forward tunnel; CLI-managed Bearer; project `.opencode/opencode.json` merge without `apiKey` (dry-run prints to stdout). Auth via gcloud Application Default Credentials.
+- **GCP GPU provider (Phase 1):** `runhug gcp deploy|tunnel|status|stop|delete|dockerfile|push|opencode` and `runhug deploy --provider gcp`. Use-time GCP project + HF/GGUF model pick (never hardcoded). Thin-wraps `ghcr.io/ggml-org/llama.cpp:server-cuda` (Dockerfile/entrypoint; no ADC/SA/Bearer baked in); `runhug gcp push` does local `docker build --platform linux/amd64` + push (no Cloud Build). Spot L4/T4 DLVM runs `docker pull` + `docker run` (GCP discontinued `create-with-container`) + stop-on-idle; OpenAI `/v1` on `127.0.0.1` via SSH local-forward tunnel; CLI-managed Bearer; project `.opencode/opencode.json` merge with `{env:OPENAI_API_KEY}` only. Auth via gcloud Application Default Credentials.
+- GCP Spot **cost projection** on deploy plan (`--estimate` / dry-run): $/hr, cold-start window, 8h keep-up estimate (approximate us-central1 Spot rates).
+- **`--keep-up`**: disable stop-on-idle with an interactive y/N billing warning (skipped with `--yes`); guest entrypoint skips idle watcher when `IDLE_SECONDS=0`.
+- **npm package** `runhug`: `npm i -g runhug` / `npx runhug` downloads the matching GitHub Release binary on postinstall.
+- `scripts/build-release.sh` cross-compiles `runhug_<ver>_…` assets + `SHA256SUMS.txt`.
+
+### Changed
+- Default llama-server context size **32768** (OpenCode agent prompts exceed 8k).
+- OpenCode / Next tunnel hints use local port **18080** to avoid colliding with a host `:8080`.
+
+## [0.1.6] - 2026-09-18
+
+### Added
 - `runhug heretic make <org/model>` trains a "heretic" (abliteration) model on a RunPod GPU pod running `ghcr.io/adamsiwiec1/runhug-heretic`. The CLI sizes the GPU against the Hub repo, provisions the pod, and streams live trial progress (refusals / KL divergence) to the terminal via the pod dashboard; the decensored model is uploaded to `<hf-user>/heretic-<model>` when a HF token is configured. Also `heretic logs`, `heretic stop`, `heretic status`; pod-backed registry entries show up in `list` / `status` / `delete`.
 
 ### Changed
 - README-only docs: removed VitePress `docs/` site, Pages workflow, and npm docs tooling; hero at `assets/hero.svg`. Install story is curl|bash / irm|iex (+ optional `go install`). CLI help Docs link points at the GitHub README.
-- Product/repo rename: module `github.com/adamsiwiec1/runhug`, CLI binary `runhug` (`cmd/runhug`), config dir `~/.config/runhug` (migrates keys/settings from `~/.config/runhug-cli`). GitHub repo is now `adamsiwiec1/runhug`. Next release asset prefix `runhug_<ver>_…` (install scripts still accept legacy `runhug-cli_` assets).
+- Product/repo rename: module `github.com/adamsiwiec1/runhug`, CLI binary `runhug` (`cmd/runhug`), config dir `~/.config/runhug` (migrates keys/settings from `~/.config/runhug-cli`). GitHub repo is now `openhat-security/runhug` (legacy `adamsiwiec1/runhug` redirects). Release asset prefix `runhug_<ver>_…` (install scripts still accept legacy `runhug-cli_` assets).
 
 ### Fixed
 - Live `deploy` create payload matches Runpod v2: top-level `type` (default `QUEUE`, matching `worker-v1-vllm`), `workers.idleTimeout`, and `scaling` as `{type:QUEUE_DELAY,queueDelay}` for QUEUE or `{type:REQUEST_COUNT,requestCount}` for LOAD_BALANCER (no `value`/`idleTimeout` in scaling). Optional `--endpoint-type LOAD_BALANCER` uses FastAPI LB URL `https://{id}.api.runpod.ai/v1` (not `/openai/v1`). QUEUE OpenAI URL remains `https://api.runpod.ai/v2/{id}/openai/v1`.
