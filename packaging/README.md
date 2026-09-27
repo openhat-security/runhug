@@ -37,14 +37,15 @@ gh repo create openhat-security/packages --public --description "apt + dnf repos
 
 | Secret | Required for |
 |--------|----------------|
-| `HOMEBREW_TAP_TOKEN` or `PACKAGING_TOKEN` | Push formula to `homebrew-tap` |
-| `SCOOP_TOKEN` or `PACKAGING_TOKEN` | Push Scoop manifest |
-| `PACKAGING_TOKEN` | Push `packages` main (apt/dnf Pages site) |
-| `NPM_TOKEN` | `npm publish` from `packaging/npm` |
+| `NPM_TOKEN` | `npm publish` from `packaging/npm` (required for npm channel) |
+| `PACKAGING_TOKEN` | Push `homebrew-tap`, `scoop-bucket`, and `packages` (apt/dnf Pages) |
+| `HOMEBREW_TAP_TOKEN` / `SCOOP_TOKEN` | Optional overrides instead of `PACKAGING_TOKEN` |
 | `WINGET_PAT` | Auto-PR to `microsoft/winget-pkgs` |
 | `GPG_PRIVATE_KEY` | Optional signing for apt InRelease (unset = `trusted=yes`) |
 
-`PACKAGING_TOKEN` should be a fine-grained PAT (or classic) with **contents: write** on `homebrew-tap`, `scoop-bucket`, and `packages`.
+`PACKAGING_TOKEN` should be a fine-grained PAT (or classic) with **contents: write** on `homebrew-tap`, `scoop-bucket`, and `packages`. Without it, GoReleaser still publishes the GitHub Release; brew/scoop upload is skipped (do **not** fall back to `GITHUB_TOKEN` — it cannot write other repos).
+
+To re-publish npm for an existing tag: Actions → Release → Run workflow → set tag `vX.Y.Z` with **npm_only**.
 
 ## Local snapshot
 

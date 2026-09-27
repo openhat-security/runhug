@@ -89,6 +89,8 @@ homebrew_casks:
   - name: runhug
     ids:
       - default
+    # Skip push when PACKAGING_TOKEN / HOMEBREW_TAP_TOKEN unset (GITHUB_TOKEN cannot write other repos).
+    skip_upload: '{{ not (isEnvSet "HOMEBREW_TAP_TOKEN") }}'
     repository:
       owner: openhat-security
       name: homebrew-tap
@@ -107,6 +109,7 @@ scoops:
   - name: runhug
     ids:
       - default
+    skip_upload: '{{ not (isEnvSet "SCOOP_TOKEN") }}'
     repository:
       owner: openhat-security
       name: scoop-bucket

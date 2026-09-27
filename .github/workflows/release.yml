@@ -4,12 +4,24 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to publish npm for (e.g. v0.1.8). Leave empty for a full release from a tag push."
+        required: false
+        type: string
+      npm_only:
+        description: "Only publish npm (skip GoReleaser)"
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: write
 
 jobs:
   goreleaser:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.npm_only)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -28,15 +40,28 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN || secrets.PACKAGING_TOKEN || secrets.GITHUB_TOKEN }}
-          SCOOP_TOKEN: ${{ secrets.SCOOP_TOKEN || secrets.PACKAGING_TOKEN || secrets.GITHUB_TOKEN }}
+          # Do not fall back to GITHUB_TOKEN — it cannot write to homebrew-tap / scoop-bucket.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN || secrets.PACKAGING_TOKEN }}
+          SCOOP_TOKEN: ${{ secrets.SCOOP_TOKEN || secrets.PACKAGING_TOKEN }}
+
+  npm:
+    needs: goreleaser
+    if: |
+      always() && (
+        (github.event_name == 'push' && needs.goreleaser.result == 'success') ||
+        (github.event_name == 'workflow_dispatch' && (inputs.npm_only || needs.goreleaser.result == 'success'))
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Publish npm package
-        if: success()
         working-directory: packaging/npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          VER: ${{ github.ref_name }}
+          VER: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
           if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
@@ -50,13 +75,18 @@ jobs:
 
   winget:
     needs: goreleaser
+    if: |
+      always() && (
+        (github.event_name == 'push' && needs.goreleaser.result == 'success') ||
+        (github.event_name == 'workflow_dispatch' && !inputs.npm_only && needs.goreleaser.result == 'success')
+      )
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - name: Update winget manifests / submit PR
         env:
           WINGET_PAT: ${{ secrets.WINGET_PAT }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
           VER="${TAG#v}"
