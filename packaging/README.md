@@ -30,7 +30,7 @@ packaging/
 gh repo create openhat-security/homebrew-tap --public --description "Homebrew tap for OpenHat Security CLIs" --add-readme
 gh repo create openhat-security/scoop-bucket --public --description "Scoop bucket for OpenHat Security CLIs" --add-readme
 gh repo create openhat-security/packages --public --description "apt + dnf repos for OpenHat Security (GitHub Pages)" --add-readme
-# Settings → Pages → Deploy from branch gh-pages (created by publish-linux-repos workflow)
+# Settings → Pages → Deploy from branch main / (root)
 ```
 
 ## Secrets (on `openhat-security/runhug`)
@@ -39,7 +39,7 @@ gh repo create openhat-security/packages --public --description "apt + dnf repos
 |--------|----------------|
 | `HOMEBREW_TAP_TOKEN` or `PACKAGING_TOKEN` | Push formula to `homebrew-tap` |
 | `SCOOP_TOKEN` or `PACKAGING_TOKEN` | Push Scoop manifest |
-| `PACKAGING_TOKEN` | Push `packages` gh-pages (apt/dnf) |
+| `PACKAGING_TOKEN` | Push `packages` main (apt/dnf Pages site) |
 | `NPM_TOKEN` | `npm publish` from `packaging/npm` |
 | `WINGET_PAT` | Auto-PR to `microsoft/winget-pkgs` |
 | `GPG_PRIVATE_KEY` | Optional signing for apt InRelease (unset = `trusted=yes`) |

@@ -66,7 +66,7 @@ jobs:
           token: ${{ secrets.PACKAGING_TOKEN || secrets.GITHUB_TOKEN }}
           path: packages-repo
 
-      - name: Push site to packages (gh-pages branch)
+      - name: Push site to packages (main)
         if: env.skip != '1'
         working-directory: packages-repo
         env:
@@ -75,9 +75,10 @@ jobs:
           set -euo pipefail
           git config user.name "runhug-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B gh-pages
-          # Replace site contents
-          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          git checkout main
+          git pull --ff-only origin main || true
+          # Keep README.md; replace the rest of the published site.
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' ! -name 'README.md' -exec rm -rf {} +
           cp -a ../public/. .
           touch .nojekyll
           git add -A
@@ -86,4 +87,4 @@ jobs:
             exit 0
           fi
           git commit -m "sync packages from runhug ${{ steps.tag.outputs.tag }}"
-          git push -u origin gh-pages --force
+          git push origin main
