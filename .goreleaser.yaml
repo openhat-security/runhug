@@ -102,13 +102,6 @@ homebrew_casks:
       email: 41898282+github-actions[bot]@users.noreply.github.com
     binaries:
       - runhug
-    # Unsigned GitHub Release binaries need quarantine cleared on macOS.
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/runhug"]
-          end
 
 scoops:
   - name: runhug
