@@ -21,6 +21,10 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - Multi-channel packaging via GoReleaser: Homebrew Cask (`openhat-security/homebrew-tap`), Scoop (`openhat-security/scoop-bucket`), `.deb`/`.rpm` (nfpm), apt + dnf repos on GitHub Pages (`openhat-security/packages`), AUR `runhug-bin` PKGBUILD, winget manifest generator, npm under `packaging/npm`.
+- Scaffolding for macOS Developer ID codesign + notarization (GoReleaser `notarize.macos`, enabled when `MACOS_SIGN_P12` is set). See `packaging/macos/README.md` and [#41](https://github.com/openhat-security/runhug/issues/41).
+
+### Fixed
+- `scripts/install.sh` and npm postinstall clear macOS Gatekeeper quarantine after download (workaround until notarized releases).
 
 ## [0.1.7] - 2026-09-27
 
