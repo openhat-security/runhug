@@ -8,31 +8,31 @@
 
 ## What it does
 
-1. **Search** Hugging Face — find models on hugging face using our NLP search mechanism. essentially, a more intelligent "google" search, better than hugging face UI.
-2. **Deploy** RunPod serverless vLLM (default) || GCP Compute Engine COS (Container-Optimized OS) llama.cpp || more low cost deployment options coming soon..
-3. **Use** an OpenAI-compatible URL — chat from any OpenAI client, `runhug run`, or `runhug start claude` / `runhug start opencode`
-
-**Providers:** RunPod remains the default `deploy`. GCP Phase 1 (`runhug deploy --provider gcp` / `runhug gcp …`) picks a project + HF GGUF model at use time, thin-wraps the official CUDA `llama-server` image (`runhug gcp push` → Artifact Registry; no secrets baked in), creates a Spot L4/T4 DLVM that `docker pull`s + runs that image (cold start = pull + start) with stop-on-idle, and exposes OpenAI `/v1` on `127.0.0.1` through an SSH local-forward tunnel (`runhug gcp tunnel`) with a CLI-managed Bearer. Default is no public IP (Cloud NAT for pull/egress; `--public-ip` is dogfood-only). Hugging Face stays Hub search + optional embeddings.
+1. ***Search*** Hugging Face — find models on hugging face using our NLP search mechanism. essentially, a more intelligent "google" search, better than hugging face UI.
+2. ***Deploy*** RunPod serverless vLLM (default) || GCP Compute Engine COS (Container-Optimized OS) llama.cpp || more low cost deployment options coming soon..
+3. ***Use*** it in less than a minute. OpenAI-compatible URL, Claude Code, OpenCode. `runhug run`, or `runhug start claude` / `runhug start opencode`
+ ***more integrations coming soon*** 
 
 ## How to use
 
 ```bash
 runhug wizard          # guided setup (no live deploy without confirm)
-runhug init --yes      # search NLP + optional index packs
-runhug connect         # RunPod API key
-runhug connect hf      # optional Hub / embeddings token
+runhug init --yes      # search NLP + optional index packs (index packs = more models, better search)
+runhug connect         # Configure RunPod Connection
+runhug connect hf      # Configure Hugging Face Connection
 
 runhug search -q "small instruct llm"
 runhug recommend -q "cheap chat on a small GPU"
 runhug deploy <model> --dry-run
-runhug deploy <model>              # default endpoint type: QUEUE (RunPod)
+runhug deploy <model>
 runhug deploy --provider gcp <gguf-model> --project <id> --dry-run
 runhug gcp push --image REGION-docker.pkg.dev/PROJECT/runhug/llama-server:cuda
-runhug gcp tunnel                  # SSH local-forward → http://127.0.0.1:8080/v1
+runhug gcp tunnel                  
 runhug list
-runhug proxy                       # local OpenAI proxy @ 127.0.0.1:8080/v1
-runhug run [model]                 # chat
-runhug start claude                # point Claude Code at the endpoint
+runhug proxy           # local OpenAI proxy @ 127.0.0.1:8080/v1 (don't worry about changing vars when switching between endpoints, providers, models)
+runhug run [model]     # chat locally 
+runhug start claude    # Use your model with Claude Code.
+runhug start opencode  # Use your model with OpenCode. 
 ```
 
 **QUEUE** OpenAI base: `https://api.runpod.ai/v2/{id}/openai/v1`  
