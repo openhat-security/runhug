@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/adamsiwiec1/runhug/internal/config"
+	"github.com/adamsiwiec1/runhug/internal/hparams"
 	"github.com/adamsiwiec1/runhug/internal/runpod"
 	"github.com/adamsiwiec1/runhug/internal/store"
 )
@@ -21,6 +22,7 @@ type EndpointTarget struct {
 	Source     string // human-readable origin
 	HFRepo     string
 	NeedsProxy bool // true when using local runhug proxy listen addr
+	Sampling   *hparams.Sampling
 }
 
 // ResolveEndpoint picks an OpenAI base URL for interactive use.
@@ -116,22 +118,38 @@ func targetFromModel(m store.Model, apiKey, serveModel string) (EndpointTarget, 
 			return EndpointTarget{}, fmt.Errorf("local model %s has no base_url; run `runhug local start`", m.HFRepo)
 		}
 		return EndpointTarget{
-			BaseURL: strings.TrimRight(m.BaseURL, "/"),
-			APIKey:  apiKey,
-			Model:   modelName,
-			Source:  "local " + m.Runtime,
-			HFRepo:  m.HFRepo,
+			BaseURL:   strings.TrimRight(m.BaseURL, "/"),
+			APIKey:    apiKey,
+			Model:     modelName,
+			Source:    "local " + m.Runtime,
+			HFRepo:    m.HFRepo,
+			Sampling:  m.Sampling,
+		}, nil
+	}
+	if m.Kind() == store.BackendGCP {
+		base := strings.TrimRight(m.BaseURL, "/")
+		if base == "" {
+			return EndpointTarget{}, fmt.Errorf("gcp model %s has no tunnel URL; run `runhug gcp tunnel`", m.HFRepo)
+		}
+		return EndpointTarget{
+			BaseURL:  base,
+			APIKey:   apiKey,
+			Model:    modelName,
+			Source:   "gcp " + m.PodID,
+			HFRepo:   m.HFRepo,
+			Sampling: m.Sampling,
 		}, nil
 	}
 	if m.EndpointID == "" {
 		return EndpointTarget{}, fmt.Errorf("registry entry %s has no endpoint id", m.HFRepo)
 	}
 	return EndpointTarget{
-		BaseURL: runpod.OpenAIURLFor(m.EndpointType, m.EndpointID),
-		APIKey:  apiKey,
-		Model:   modelName,
-		Source:  "runpod " + m.EndpointID,
-		HFRepo:  m.HFRepo,
+		BaseURL:  runpod.OpenAIURLFor(m.EndpointType, m.EndpointID),
+		APIKey:   apiKey,
+		Model:    modelName,
+		Source:   "runpod " + m.EndpointID,
+		HFRepo:   m.HFRepo,
+		Sampling: m.Sampling,
 	}, nil
 }
 

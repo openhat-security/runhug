@@ -53,8 +53,11 @@ func cmdDeploy(args []string) error {
 	force := fs.Bool("force", false, "deploy gated models without HF_TOKEN, or non-vLLM formats")
 	smoke := fs.Bool("smoke", false, "run a short completion after create (bills a cold start)")
 	asJSON := fs.Bool("json", false, "print JSON")
+	samplingMode := fs.String("sampling", "recommended", "recommended, none, or customize (with --set)")
 	var extra stringsFlag
 	fs.Var(&extra, "env", "extra KEY=VALUE (repeatable)")
+	var setFlag stringsFlag
+	fs.Var(&setFlag, "set", "sampling KEY=VALUE (repeatable: temp, top_p, top_k, min_p, rep, max_tokens)")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -71,7 +74,8 @@ func cmdDeploy(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	model, err := hf.New(env.HFToken).Get(ctx, modelID)
+	hfClient := hf.New(env.HFToken)
+	model, err := hfClient.Get(ctx, modelID)
 	if err != nil {
 		return err
 	}
@@ -181,9 +185,15 @@ func cmdDeploy(args []string) error {
 
 	printPlan(modelID, format, est, choice, req, env.HFToken != "", *estimate, *dry)
 
+	rec := loadRecommendSampling(ctx, hfClient, *model, format)
+	chosen, err := chooseSampling(rec, *samplingMode, setFlag, *yes, *dry, *asJSON)
+	if err != nil {
+		return err
+	}
+
 	if *dry {
 		if *asJSON {
-			return writeJSON(map[string]any{"plan": req, "choice": choice, "estimate": est})
+			return writeJSON(map[string]any{"plan": req, "choice": choice, "estimate": est, "sampling": chosen})
 		}
 		fmt.Println(dim("dry-run: nothing created"))
 		return nil
@@ -217,6 +227,7 @@ func cmdDeploy(args []string) error {
 		GPUCount:     choice.GPUCount,
 		Image:        req.Image,
 		HourlyUSD:    choice.HourlyUSD,
+		Sampling:     chosen,
 		CreatedAt:    time.Now().UTC(),
 	})
 	reg.Current = modelID
@@ -363,7 +374,6 @@ func slug(modelID string) string {
 	}
 	return s
 }
-
 
 // peekProvider returns --provider value when present.
 func peekProvider(args []string) (string, bool) {

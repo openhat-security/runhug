@@ -51,3 +51,31 @@ func TestDownload(t *testing.T) {
 		t.Fatalf("got %q", raw)
 	}
 }
+
+func TestGenerationConfig(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/org/m/resolve/main/generation_config.json":
+			_, _ = w.Write([]byte(`{"temperature":0.2,"top_p":0.9}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c := New("")
+	c.BaseURL = srv.URL
+	got, err := c.GenerationConfig(context.Background(), "org/m")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["temperature"] != 0.2 {
+		t.Fatalf("%+v", got)
+	}
+	empty, err := c.GenerationConfig(context.Background(), "org/missing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(empty) != 0 {
+		t.Fatalf("404 should be empty, got %+v", empty)
+	}
+}

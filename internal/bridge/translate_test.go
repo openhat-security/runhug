@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/adamsiwiec1/runhug/internal/hparams"
 )
 
 func TestTranslateRequestTextAndSystem(t *testing.T) {
@@ -205,5 +207,32 @@ func TestEstimateTokens(t *testing.T) {
 	})
 	if n < 1 {
 		t.Fatal(n)
+	}
+}
+
+func TestFillOpenAISampling(t *testing.T) {
+	temp := 0.4
+	s := &hparams.Sampling{Temperature: &temp}
+	in := []byte(`{"model":"m","messages":[],"max_tokens":64}`)
+	out := FillOpenAISampling(in, s)
+	var o openaiReq
+	if err := json.Unmarshal(out, &o); err != nil {
+		t.Fatal(err)
+	}
+	if o.Temperature == nil || *o.Temperature != 0.4 {
+		t.Fatalf("temp %+v", o.Temperature)
+	}
+	if o.MaxTokens != 64 {
+		t.Fatalf("must not clobber max_tokens %d", o.MaxTokens)
+	}
+	clientTemp := 0.9
+	withTemp := []byte(`{"model":"m","temperature":0.9}`)
+	out2 := FillOpenAISampling(withTemp, s)
+	var o2 openaiReq
+	if err := json.Unmarshal(out2, &o2); err != nil {
+		t.Fatal(err)
+	}
+	if o2.Temperature == nil || *o2.Temperature != clientTemp {
+		t.Fatalf("client temp must win, got %v", o2.Temperature)
 	}
 }

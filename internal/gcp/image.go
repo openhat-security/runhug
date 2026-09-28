@@ -3,6 +3,8 @@ package gcp
 import (
 	"fmt"
 	"strings"
+
+	"github.com/adamsiwiec1/runhug/internal/hparams"
 )
 
 // PrebuiltLlamaServerCUDA is the official llama.cpp CUDA server image we thin-wrap.
@@ -27,6 +29,13 @@ type ImageConfig struct {
 	Context int
 	// GPULayers (-ngl); -1 = all.
 	GPULayers int
+	// Optional llama-server sampling defaults (from runhug hparams).
+	Temperature       string
+	TopP              string
+	TopK              string
+	MinP              string
+	RepetitionPenalty string
+	MaxTokens         string
 }
 
 func (c ImageConfig) withDefaults() ImageConfig {
@@ -44,6 +53,32 @@ func (c ImageConfig) withDefaults() ImageConfig {
 	}
 	if c.GPULayers == 0 {
 		c.GPULayers = -1
+	}
+	return c
+}
+
+// WithSampling copies optional llama-server sampling flags from a recommended set.
+func (c ImageConfig) WithSampling(s *hparams.Sampling) ImageConfig {
+	if s == nil || s.Empty() {
+		return c
+	}
+	if s.Temperature != nil {
+		c.Temperature = fmt.Sprintf("%g", *s.Temperature)
+	}
+	if s.TopP != nil {
+		c.TopP = fmt.Sprintf("%g", *s.TopP)
+	}
+	if s.TopK != nil {
+		c.TopK = fmt.Sprintf("%d", *s.TopK)
+	}
+	if s.MinP != nil {
+		c.MinP = fmt.Sprintf("%g", *s.MinP)
+	}
+	if s.RepetitionPenalty != nil {
+		c.RepetitionPenalty = fmt.Sprintf("%g", *s.RepetitionPenalty)
+	}
+	if s.MaxTokens != nil {
+		c.MaxTokens = fmt.Sprintf("%d", *s.MaxTokens)
 	}
 	return c
 }
@@ -190,6 +225,12 @@ fi
 
 echo "runhug: llama-server $GGUF_PATH on ${HOST}:${PORT} (idle=${IDLE_SECONDS}s)" >&2
 ARGS=(-m "$GGUF_PATH" --host "$HOST" --port "$PORT" -c "$CONTEXT" -ngl "$NGL" --api-key "$API_KEY")
+if [[ -n "${TEMP:-}" ]]; then ARGS+=(--temp "$TEMP"); fi
+if [[ -n "${TOP_P:-}" ]]; then ARGS+=(--top-p "$TOP_P"); fi
+if [[ -n "${TOP_K:-}" ]]; then ARGS+=(--top-k "$TOP_K"); fi
+if [[ -n "${MIN_P:-}" ]]; then ARGS+=(--min-p "$MIN_P"); fi
+if [[ -n "${REPEAT_PENALTY:-}" ]]; then ARGS+=(--repeat-penalty "$REPEAT_PENALTY"); fi
+if [[ -n "${N_PREDICT:-}" ]]; then ARGS+=(-n "$N_PREDICT"); fi
 if [[ -n "${SERVED_MODEL:-}" ]]; then
   ARGS+=(--alias "$SERVED_MODEL")
 elif [[ -n "$MODEL_ID" ]]; then
@@ -340,6 +381,18 @@ docker rm -f "$NAME" 2>/dev/null || true
 ENV_ARGS=(-e HOST=127.0.0.1 -e PORT=8080 -e IDLE_SECONDS="$IDLE_SECONDS" -e CONTEXT=32768 -e NGL=-1)
 if [[ -n "$MODEL_ID" ]]; then ENV_ARGS+=(-e "MODEL_ID=$MODEL_ID"); fi
 if [[ -n "$GGUF_FILE" ]]; then ENV_ARGS+=(-e "GGUF_FILE=$GGUF_FILE"); fi
+TEMP="$(meta_attr runhug-temp)"
+TOP_P="$(meta_attr runhug-top-p)"
+TOP_K="$(meta_attr runhug-top-k)"
+MIN_P="$(meta_attr runhug-min-p)"
+REPEAT_PENALTY="$(meta_attr runhug-repeat-penalty)"
+N_PREDICT="$(meta_attr runhug-n-predict)"
+if [[ -n "$TEMP" ]]; then ENV_ARGS+=(-e "TEMP=$TEMP"); fi
+if [[ -n "$TOP_P" ]]; then ENV_ARGS+=(-e "TOP_P=$TOP_P"); fi
+if [[ -n "$TOP_K" ]]; then ENV_ARGS+=(-e "TOP_K=$TOP_K"); fi
+if [[ -n "$MIN_P" ]]; then ENV_ARGS+=(-e "MIN_P=$MIN_P"); fi
+if [[ -n "$REPEAT_PENALTY" ]]; then ENV_ARGS+=(-e "REPEAT_PENALTY=$REPEAT_PENALTY"); fi
+if [[ -n "$N_PREDICT" ]]; then ENV_ARGS+=(-e "N_PREDICT=$N_PREDICT"); fi
 
 echo "runhug: docker run $IMAGE (host net, GPU, 127.0.0.1:8080)"
 docker run -d --name "$NAME" --restart=no \

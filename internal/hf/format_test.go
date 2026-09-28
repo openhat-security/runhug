@@ -21,6 +21,13 @@ func TestDetectFormat(t *testing.T) {
 	if got := DetectFormat(gguf); got.Engine != EngineGGUF {
 		t.Fatalf("gguf engine %s", got.Engine)
 	}
+	ggufQ := Model{
+		LibraryName: "gguf",
+		Siblings:    []Sibling{{RFilename: "model.Q4_K_M.gguf"}},
+	}
+	if got := DetectFormat(ggufQ); got.Quant != "q4_k_m" {
+		t.Fatalf("gguf quant %+v", got)
+	}
 
 	awq := Model{Tags: []string{"safetensors", "awq", "4-bit"}}
 	if got := DetectFormat(awq); got.Quant != "awq" || got.Engine != EngineVLLM {

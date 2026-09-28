@@ -43,6 +43,11 @@ func DetectFormat(m Model) Format {
 		}
 		if strings.HasSuffix(name, ".gguf") {
 			f.HasGGUF = true
+			if f.Quant == "" {
+				if q := QuantFromFilename(name); q != "" {
+					f.Quant = q
+				}
+			}
 		}
 	}
 	if m.Safetensors != nil && m.Safetensors.Total > 0 {
@@ -57,4 +62,21 @@ func DetectFormat(m Model) Format {
 		f.Engine = EngineGGUF
 	}
 	return f
+}
+
+// QuantFromFilename extracts a GGUF quant tag (q4_k_m, iq4_xs, …) from a sibling name.
+func QuantFromFilename(name string) string {
+	low := strings.ToLower(name)
+	// Prefer longer / more specific labels first.
+	for _, q := range []string{
+		"iq4_xs", "iq4_nl", "iq3_m", "iq3_xxs", "iq2_xxs", "iq2_xs", "iq1_s",
+		"q4_k_m", "q4_k_s", "q5_k_m", "q5_k_s", "q3_k_m", "q3_k_s", "q3_k_l",
+		"q6_k", "q8_0", "q4_0", "q5_0", "q2_k", "q3_k", "q4_k", "q5_k",
+		"fp16", "bf16", "f16", "f32",
+	} {
+		if strings.Contains(low, q) {
+			return q
+		}
+	}
+	return ""
 }

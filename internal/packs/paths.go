@@ -11,7 +11,7 @@ import (
 const (
 	EnvPacksRepo   = "RUNHUG_PACKS_REPO"
 	EnvIndexLimit  = "RUNHUG_INDEX_LIMIT"
-	DefaultRepo    = "adamsiwiec1/runhug"
+	DefaultRepo    = "openhat-security/runhug"
 	packsSubdir    = "packs"
 	installedName  = "installed.json"
 )

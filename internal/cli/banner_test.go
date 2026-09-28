@@ -55,7 +55,8 @@ func TestPrintUsageIncludesGroupedHelp(t *testing.T) {
 		"connect hf",
 		"search nlp",
 		"local index",
-		"get started: runhug wizard",
+		"upgrade",
+		"deploy it in minutes",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help missing %q\n%s", want, out)
@@ -90,8 +91,11 @@ func TestPrintUsageOmitsEnvDump(t *testing.T) {
 	if strings.Contains(out, "Tips") {
 		t.Fatalf("default help must not include Tips block\n%s", out)
 	}
-	if !strings.Contains(out, "get started: runhug wizard") {
-		t.Fatalf("expected quiet get-started line\n%s", out)
+	if !strings.Contains(out, "\nwizard\n") && !strings.HasSuffix(strings.TrimSpace(out), "wizard") {
+		t.Fatalf("expected trailing wizard hint\n%s", out)
+	}
+	if strings.Contains(out, "Tips") || strings.Contains(out, "New here?") {
+		t.Fatalf("help must not include Tips block\n%s", out)
 	}
 	for _, leak := range []string{"gpus / import", "(guide", "(deployments)", "(serve)", "aliases:"} {
 		if strings.Contains(out, leak) {

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/adamsiwiec1/runhug/internal/hparams"
 )
 
 // Config for the local Anthropic→OpenAI bridge.
@@ -27,6 +29,8 @@ type Config struct {
 	ListenAddr string
 	// ExpectedToken optional; if set, require Bearer or x-api-key to match.
 	ExpectedToken string
+	// Sampling fills unset temperature/top_p/max_tokens on translated requests.
+	Sampling *hparams.Sampling
 }
 
 // Server is a local HTTP bridge.
@@ -168,6 +172,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		anthropicHTTPError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
+	openaiBody = FillOpenAISampling(openaiBody, s.cfg.Sampling)
 	modelForResp := areq.Model
 	if dm := strings.TrimSpace(s.cfg.DefaultModel); dm != "" && (modelForResp == "" || isClaudeish(modelForResp)) {
 		modelForResp = dm

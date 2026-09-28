@@ -8,10 +8,10 @@
 
 ## What it does
 
-1. ***Search*** Hugging Face — find models on hugging face using our NLP search mechanism. essentially, a more intelligent "google" search, better than hugging face UI.
-2. ***Deploy*** RunPod serverless vLLM (default) || GCP Compute Engine COS (Container-Optimized OS) llama.cpp || more low cost deployment options coming soon..
-3. ***Use*** it in less than a minute. OpenAI-compatible URL, Claude Code, OpenCode. `runhug run`, or `runhug start claude` / `runhug start opencode`
- ***more integrations coming soon*** 
+1. ***Search*** Hugging Face — NLP search over the local index (or `--online` Hub). A more intelligent search than the Hub UI.
+2. ***Deploy*** **any** Hugging Face checkpoint — not only the curated set Hugging Face Inference supports. RunPod serverless vLLM (default) or GCP Spot llama.cpp. That includes uncensored / abliterated **heretic** models you can train in-CLI (`runhug heretic make <org/model>`).
+3. ***Use*** it in less than a minute. OpenAI-compatible URL, Claude Code, OpenCode. `runhug run`, or `runhug start claude` / `runhug start opencode`.
+   ***more integrations coming soon***
 
 ## How to use
 
@@ -24,7 +24,8 @@ runhug connect hf      # Configure Hugging Face Connection
 runhug search -q "small instruct llm"
 runhug recommend -q "cheap chat on a small GPU"
 runhug deploy <model> --dry-run
-runhug deploy <model>
+runhug deploy <model>                 # last step: recommended / none / customize sampling
+runhug heretic make <org/model>       # abliterate any transformers checkpoint, then deploy it
 runhug deploy --provider gcp <gguf-model> --project <id> --dry-run
 runhug gcp push --image REGION-docker.pkg.dev/PROJECT/runhug/llama-server:cuda
 runhug gcp tunnel                  

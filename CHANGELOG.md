@@ -21,6 +21,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - Multi-channel packaging via GoReleaser: Homebrew Cask (`openhat-security/homebrew-tap`), Scoop (`openhat-security/scoop-bucket`), `.deb`/`.rpm` (nfpm), apt + dnf repos on GitHub Pages (`openhat-security/packages`), AUR `runhug-bin` PKGBUILD, winget manifest generator, npm under `packaging/npm`.
+- Deploy-time **sampling best-practice** step (`--sampling recommended|none`, `--set key=value`): family table + quant-aware nudge (GGUF/AWQ/GPTQ) + Hub `generation_config.json`. Applied server-side on GCP llama-server; request-time via `runhug run` / Claude bridge on RunPod.
+- README / hero: deploy **any** model, including heretic/abliterated builds (`runhug heretic make`).
+
+### Changed
+- `assets/hero.svg`: Claude Code, OpenCode, RunPod, and GCP marks; any-model / heretic copy.
 
 ## [0.1.7] - 2026-09-27
 

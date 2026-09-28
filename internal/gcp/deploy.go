@@ -137,6 +137,24 @@ func buildCreateArgsPrintable(plan *DeployPlan) []string {
 	if plan.GGUFFile != "" {
 		meta += ",runhug-gguf-file=" + plan.GGUFFile
 	}
+	if plan.Image.Temperature != "" {
+		meta += ",runhug-temp=" + plan.Image.Temperature
+	}
+	if plan.Image.TopP != "" {
+		meta += ",runhug-top-p=" + plan.Image.TopP
+	}
+	if plan.Image.TopK != "" {
+		meta += ",runhug-top-k=" + plan.Image.TopK
+	}
+	if plan.Image.MinP != "" {
+		meta += ",runhug-min-p=" + plan.Image.MinP
+	}
+	if plan.Image.RepetitionPenalty != "" {
+		meta += ",runhug-repeat-penalty=" + plan.Image.RepetitionPenalty
+	}
+	if plan.Image.MaxTokens != "" {
+		meta += ",runhug-n-predict=" + plan.Image.MaxTokens
+	}
 	args = append(args,
 		"--metadata="+meta,
 		"--metadata-from-file=startup-script=<tmp>,runhug-api-key=<tmp-token>[,runhug-hf-token=<tmp>]",
@@ -238,6 +256,24 @@ func liveCreateArgs(plan *DeployPlan, bundle *DeployBundle) []string {
 		",install-nvidia-driver=True"
 	if plan.GGUFFile != "" {
 		meta += ",runhug-gguf-file=" + plan.GGUFFile
+	}
+	if plan.Image.Temperature != "" {
+		meta += ",runhug-temp=" + plan.Image.Temperature
+	}
+	if plan.Image.TopP != "" {
+		meta += ",runhug-top-p=" + plan.Image.TopP
+	}
+	if plan.Image.TopK != "" {
+		meta += ",runhug-top-k=" + plan.Image.TopK
+	}
+	if plan.Image.MinP != "" {
+		meta += ",runhug-min-p=" + plan.Image.MinP
+	}
+	if plan.Image.RepetitionPenalty != "" {
+		meta += ",runhug-repeat-penalty=" + plan.Image.RepetitionPenalty
+	}
+	if plan.Image.MaxTokens != "" {
+		meta += ",runhug-n-predict=" + plan.Image.MaxTokens
 	}
 	fromFile := "startup-script=" + bundle.StartupPath + ",runhug-api-key=" + bundle.TokenPath
 	if bundle.HFPath != "" {

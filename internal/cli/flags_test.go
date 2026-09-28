@@ -48,7 +48,8 @@ func TestUsageMentionsSearch(t *testing.T) {
 		"search nlp",
 		"--online",
 		"local index",
-		"get started: runhug wizard",
+		"upgrade",
+		"deploy it in minutes",
 	} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("usage missing %q\n%s", want, s)

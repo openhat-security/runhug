@@ -13,6 +13,7 @@ import (
 	"github.com/adamsiwiec1/runhug/internal/config"
 	"github.com/adamsiwiec1/runhug/internal/gcp"
 	"github.com/adamsiwiec1/runhug/internal/hf"
+	"github.com/adamsiwiec1/runhug/internal/hparams"
 	"github.com/adamsiwiec1/runhug/internal/store"
 )
 
@@ -83,7 +84,9 @@ flags for deploy:
   --public-ip          dogfood: ephemeral external IP (default is no-address + Cloud NAT)
   --write-image <dir>  write Dockerfile + entrypoint.sh
   --opencode           merge project .opencode/opencode.json (apiKey env ref only)
-  --estimate, -e       always print full cost block (also shown on dry-run / create)
+	--estimate, -e       always print full cost block (also shown on dry-run / create)
+  --sampling <mode>    recommended (default), none, or customize
+  --set key=value      sampling override (repeatable)
   --yes, --dry-run, --json
 
 flags for push:
@@ -121,6 +124,9 @@ func cmdGCPDeploy(args []string) error {
 	publicIP := fs.Bool("public-ip", false, "dogfood: ephemeral external IP (default no-address + Cloud NAT)")
 	estimate := fs.Bool("estimate", false, "print full cost block")
 	fs.BoolVar(estimate, "e", false, "alias for --estimate")
+	samplingMode := fs.String("sampling", "recommended", "recommended, none, or customize (with --set)")
+	var setFlag stringsFlag
+	fs.Var(&setFlag, "set", "sampling KEY=VALUE (repeatable)")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -175,7 +181,9 @@ func cmdGCPDeploy(args []string) error {
 	hctx, hcancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer hcancel()
 	var weightGB float64
-	model, err := hf.New(env.HFToken).Get(hctx, modelID)
+	var format hf.Format
+	hfClient := hf.New(env.HFToken)
+	model, err := hfClient.Get(hctx, modelID)
 	if err != nil {
 		if !*dry {
 			return fmt.Errorf("huggingface model: %w", err)
@@ -183,14 +191,19 @@ func cmdGCPDeploy(args []string) error {
 		fmt.Fprintf(os.Stderr, "%s could not fetch Hub card (%v); continuing dry-run with %s\n", yellow("warning:"), err, modelID)
 	} else {
 		modelID = model.RepoID()
-		format := hf.DetectFormat(*model)
+		format = hf.DetectFormat(*model)
 		if format.Engine != hf.EngineGGUF && format.Engine != hf.EngineUnknown {
 			fmt.Fprintf(os.Stderr, "%s %s looks like %s; GCP Phase 1 serves llama.cpp GGUF only\n", yellow("warning:"), modelID, format.Engine)
 		}
 		if ggufFile == "" {
-			if file, _, ok := hf.PickGGUF(*model); ok {
+			if file, q, ok := hf.PickGGUF(*model); ok {
 				ggufFile = file
+				if format.Quant == "" {
+					format.Quant = strings.ToLower(q)
+				}
 			}
+		} else if format.Quant == "" {
+			format.Quant = hf.QuantFromFilename(ggufFile)
 		}
 		if model.IsGated() && env.HFToken == "" {
 			return fmt.Errorf("%s is gated; set HF_TOKEN (passed as instance metadata, not baked into the image)", modelID)
@@ -249,6 +262,18 @@ func cmdGCPDeploy(args []string) error {
 	})
 	if err != nil {
 		return err
+	}
+
+	var chosen *hparams.Sampling
+	if model != nil {
+		rec := loadRecommendSampling(hctx, hfClient, *model, format)
+		chosen, err = chooseSampling(rec, *samplingMode, setFlag, *yes, *dry, *asJSON)
+		if err != nil {
+			return err
+		}
+		plan.Image = plan.Image.WithSampling(chosen)
+		plan.Entrypoint = gcp.EntrypointScript(plan.Image)
+		plan.Startup = gcp.StartupScript(plan.Image)
 	}
 
 	if dir := strings.TrimSpace(*writeImage); dir != "" {
@@ -328,6 +353,7 @@ func cmdGCPDeploy(args []string) error {
 		ServeName: modelID,
 		Image:     plan.ContainerImage,
 		HourlyUSD: plan.Cost.HourlyUSD,
+		Sampling:  chosen,
 		CreatedAt: time.Now().UTC(),
 		// Zone/project stashed in EndpointID / EndpointType for Phase 1 reuse.
 		EndpointID:   plan.Project,

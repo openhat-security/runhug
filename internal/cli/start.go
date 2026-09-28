@@ -113,6 +113,7 @@ func startClaude(registryKey, baseURL, apiKeyEnv, serveModel string, bridgePort 
 		DefaultModel:  target.Model,
 		ListenAddr:    listen,
 		ExpectedToken: authToken,
+		Sampling:      target.Sampling,
 	})
 	if err != nil {
 		return fmt.Errorf("start anthropic bridge: %w", err)

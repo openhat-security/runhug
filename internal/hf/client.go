@@ -453,6 +453,57 @@ func (c *Client) Get(ctx context.Context, repoID string) (*Model, error) {
 	return &m, nil
 }
 
+// GenerationConfig fetches resolve/main/generation_config.json. A missing file
+// (404) returns an empty map, not an error.
+func (c *Client) GenerationConfig(ctx context.Context, repoID string) (map[string]any, error) {
+	repoID = strings.TrimSpace(strings.TrimPrefix(repoID, "https://huggingface.co/"))
+	repoID = strings.Trim(repoID, "/")
+	if repoID == "" {
+		return nil, fmt.Errorf("model id is required (org/name)")
+	}
+	base := c.BaseURL
+	if base == "" {
+		base = BaseURL
+	}
+	u := strings.TrimRight(base, "/") + "/" + repoID + "/resolve/main/generation_config.json"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", version.Name+"/"+version.Version)
+	if c.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	httpClient := c.HTTP
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
+	res, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode == http.StatusNotFound {
+		return map[string]any{}, nil
+	}
+	body, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode >= 300 {
+		return nil, fmt.Errorf("generation_config.json: HTTP %d: %s", res.StatusCode, trimBody(body))
+	}
+	var out map[string]any
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("generation_config.json: %w", err)
+	}
+	if out == nil {
+		out = map[string]any{}
+	}
+	return out, nil
+}
+
 // Whoami verifies a token via GET /api/whoami-v2 and returns the username (never the token).
 func (c *Client) Whoami(ctx context.Context) (string, error) {
 	var info struct {

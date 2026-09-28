@@ -40,6 +40,8 @@ func Run(args []string) error {
 		return cmdConfig(rest)
 	case "update":
 		return cmdUpdate(rest)
+	case "upgrade":
+		return cmdUpgrade(rest)
 	case "index-setup":
 		return cmdIndexSetup(rest)
 	case "index-update":
@@ -104,6 +106,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  recommend gpu <m>  gpu / vram for one model")
 	fmt.Fprintln(w, "  inspect <model>    hub card + vram estimate")
 	fmt.Fprintln(w, "  update             refresh index")
+	fmt.Fprintln(w, "  upgrade            update this CLI")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, bold("deploy"))
 	fmt.Fprintln(w, "  deploy <model>     serverless vllm (runpod, default)")
@@ -126,7 +129,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  config             config dir + settings")
 	fmt.Fprintln(w, "  config get|set     no_color, update_limit, advisor_*")
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "get started: runhug wizard")
+	fmt.Fprintln(w, "wizard")
 }
 
 func newFlagSet(name string) *flag.FlagSet {

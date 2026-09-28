@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/adamsiwiec1/runhug/internal/hparams"
 )
 
 // --- Anthropic request shapes (subset) ---
@@ -191,6 +193,32 @@ func anthropicToOpenAI(req anthropicReq, defaultModel string) (openaiReq, error)
 		out.ToolChoice = mapToolChoice(req.ToolChoice)
 	}
 	return out, nil
+}
+
+// FillOpenAISampling sets temperature/top_p/max_tokens on an OpenAI chat body
+// only when the client left them unset.
+func FillOpenAISampling(body []byte, s *hparams.Sampling) []byte {
+	if s == nil || s.Empty() || len(body) == 0 {
+		return body
+	}
+	var req openaiReq
+	if err := json.Unmarshal(body, &req); err != nil {
+		return body
+	}
+	if req.Temperature == nil && s.Temperature != nil {
+		req.Temperature = s.Temperature
+	}
+	if req.TopP == nil && s.TopP != nil {
+		req.TopP = s.TopP
+	}
+	if req.MaxTokens == 0 && s.MaxTokens != nil {
+		req.MaxTokens = *s.MaxTokens
+	}
+	out, err := json.Marshal(req)
+	if err != nil {
+		return body
+	}
+	return out
 }
 
 func isClaudeish(model string) bool {

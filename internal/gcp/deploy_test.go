@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/adamsiwiec1/runhug/internal/hparams"
 )
 
 type fakeRunner struct {
@@ -84,6 +86,35 @@ func TestBuildPlanL4Default(t *testing.T) {
 	}
 	if !strings.HasPrefix(plan.Name, "runhug-") {
 		t.Fatalf("name=%s", plan.Name)
+	}
+}
+
+func TestWithSamplingEntrypoint(t *testing.T) {
+	temp := 0.55
+	topP := 0.9
+	cfg := ImageConfig{ModelID: "org/m"}.WithSampling(&hparams.Sampling{
+		Temperature: &temp,
+		TopP:        &topP,
+	})
+	ep := EntrypointScript(cfg)
+	if !strings.Contains(ep, `--temp "$TEMP"`) {
+		t.Fatal("entrypoint should pass --temp")
+	}
+	st := StartupScript(cfg)
+	if !strings.Contains(st, "runhug-temp") {
+		t.Fatal("startup should forward runhug-temp metadata")
+	}
+	plan, err := BuildPlan(DeployRequest{Project: "p", ModelID: "org/m", Bearer: "rh_x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.Image = cfg
+	joined := strings.Join(plan.CreateArgs, " ")
+	_ = joined
+	meta := liveCreateArgs(plan, &DeployBundle{StartupPath: "/tmp/s", TokenPath: "/tmp/t"})
+	all := strings.Join(meta, " ")
+	if !strings.Contains(all, "runhug-temp=0.55") {
+		t.Fatalf("live args missing temp: %s", all)
 	}
 }
 

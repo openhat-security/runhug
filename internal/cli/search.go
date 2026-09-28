@@ -11,6 +11,7 @@ import (
 	"github.com/adamsiwiec1/runhug/internal/config"
 	"github.com/adamsiwiec1/runhug/internal/family"
 	"github.com/adamsiwiec1/runhug/internal/hf"
+	"github.com/adamsiwiec1/runhug/internal/hparams"
 )
 
 type searchFlagVals struct {
@@ -281,6 +282,10 @@ func cmdInspect(args []string) error {
 			bits = append(bits, k+"="+v)
 		}
 		printKV(os.Stdout, "family", strings.Join(bits, "  "))
+	}
+	rec := hparams.Recommend(*model, format, nil)
+	if !rec.Empty() {
+		printKV(os.Stdout, "sampling", rec.FormatBlock())
 	}
 	for _, n := range est.Notes {
 		fmt.Fprintf(os.Stdout, "  %s  %s\n", yellow(padRight("note", 9)), n)

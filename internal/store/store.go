@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/adamsiwiec1/runhug/internal/config"
+	"github.com/adamsiwiec1/runhug/internal/hparams"
 )
 
 const (
@@ -40,8 +41,9 @@ type Model struct {
 	GPUPool       string    `json:"gpu_pool,omitempty"`
 	GPUCount      int       `json:"gpu_count,omitempty"`
 	Image         string    `json:"image,omitempty"`
-	HourlyUSD     float64   `json:"hourly_usd,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
+	HourlyUSD     float64           `json:"hourly_usd,omitempty"`
+	Sampling      *hparams.Sampling `json:"sampling,omitempty"`
+	CreatedAt     time.Time         `json:"created_at"`
 }
 
 func (m Model) Kind() string {

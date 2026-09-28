@@ -121,23 +121,32 @@ type chatMsg struct {
 }
 
 type chatReq struct {
-	Model    string    `json:"model"`
-	Messages []chatMsg `json:"messages"`
-	Stream   bool      `json:"stream,omitempty"`
+	Model       string    `json:"model"`
+	Messages    []chatMsg `json:"messages"`
+	Stream      bool      `json:"stream,omitempty"`
+	Temperature *float64  `json:"temperature,omitempty"`
+	TopP        *float64  `json:"top_p,omitempty"`
+	MaxTokens   *int      `json:"max_tokens,omitempty"`
 }
 
 func chatCompletions(ctx context.Context, target EndpointTarget, msgs []chatMsg, stream bool) (string, error) {
 	base := strings.TrimRight(target.BaseURL, "/")
 	url := base + "/chat/completions"
-	payload, err := json.Marshal(chatReq{
+	payload := chatReq{
 		Model:    target.Model,
 		Messages: msgs,
 		Stream:   stream,
-	})
+	}
+	if s := target.Sampling; s != nil {
+		payload.Temperature = s.Temperature
+		payload.TopP = s.TopP
+		payload.MaxTokens = s.MaxTokens
+	}
+	raw, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(raw))
 	if err != nil {
 		return "", err
 	}
@@ -231,4 +240,3 @@ func readSSEChat(r io.Reader) (string, error) {
 	}
 	return b.String(), nil
 }
-
