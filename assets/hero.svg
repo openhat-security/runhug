@@ -36,7 +36,7 @@
     <text x="72" y="390" fill="#5eead4" font-weight="700">2</text>
     <text x="96" y="390" fill="#94a3b8">RunPod serverless vLLM or GCP COS</text>
     <text x="72" y="422" fill="#5eead4" font-weight="700">3</text>
-    <text x="96" y="422" fill="#94a3b8">OpenAI-compatible URL</text>
+    <text x="96" y="422" fill="#94a3b8">Use it anywhere. OpenAI Compatible URL, Claude Code, OpenCode, and more.</text>
   </g>
 
   <g font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="15" font-weight="600">
