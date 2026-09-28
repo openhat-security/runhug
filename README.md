@@ -8,9 +8,9 @@
 
 ## What it does
 
-1. **Search** Hugging Face — find models that fit your use case (local SQLite index + optional embeddings)
-2. **Deploy** RunPod serverless vLLM (default) — or **GCP Spot L4/T4** llama.cpp via `--provider gcp`
-3. **Use** an OpenAI-compatible URL — chat from any OpenAI client, `runhug run`, or `runhug start claude` / `start opencode`
+1. **Search** Hugging Face — find models on hugging face using our NLP search mechanism. essentially, a more intelligent "google" search, better than hugging face UI.
+2. **Deploy** RunPod serverless vLLM (default) || GCP Compute Engine COS (Container-Optimized OS) llama.cpp || more low cost deployment options coming soon..
+3. **Use** an OpenAI-compatible URL — chat from any OpenAI client, `runhug run`, or `runhug start claude` / `runhug start opencode`
 
 **Providers:** RunPod remains the default `deploy`. GCP Phase 1 (`runhug deploy --provider gcp` / `runhug gcp …`) picks a project + HF GGUF model at use time, thin-wraps the official CUDA `llama-server` image (`runhug gcp push` → Artifact Registry; no secrets baked in), creates a Spot L4/T4 DLVM that `docker pull`s + runs that image (cold start = pull + start) with stop-on-idle, and exposes OpenAI `/v1` on `127.0.0.1` through an SSH local-forward tunnel (`runhug gcp tunnel`) with a CLI-managed Bearer. Default is no public IP (Cloud NAT for pull/egress; `--public-ip` is dogfood-only). Hugging Face stays Hub search + optional embeddings.
 
