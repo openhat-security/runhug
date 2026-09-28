@@ -80,6 +80,11 @@ done
 [ "$downloaded" -eq 1 ] || die "download failed for prefixes ${ASSET_PREFIXES[*]} (tag ${tag})"
 chmod +x "$tmpbin"
 
+# Strip Gatekeeper quarantine until darwin assets are signed + notarized (#41).
+if [ "$os" = "darwin" ] && command -v xattr >/dev/null 2>&1; then
+  xattr -d com.apple.quarantine "$tmpbin" 2>/dev/null || true
+fi
+
 if [ -w /usr/local/bin ] 2>/dev/null || [ "$(id -u)" -eq 0 ]; then
   dest="/usr/local/bin/${BIN_NAME}"
 elif mkdir -p "${HOME}/.local/bin" 2>/dev/null; then
@@ -92,9 +97,15 @@ if [ "$dest" = "/usr/local/bin/${BIN_NAME}" ] && [ ! -w /usr/local/bin ]; then
   need sudo
   sudo mv "$tmpbin" "$dest"
   sudo chmod +x "$dest"
+  if [ "$os" = "darwin" ] && command -v xattr >/dev/null 2>&1; then
+    sudo xattr -d com.apple.quarantine "$dest" 2>/dev/null || true
+  fi
 else
   mv "$tmpbin" "$dest"
   chmod +x "$dest"
+  if [ "$os" = "darwin" ] && command -v xattr >/dev/null 2>&1; then
+    xattr -d com.apple.quarantine "$dest" 2>/dev/null || true
+  fi
 fi
 
 echo "Installed ${BIN_NAME} → ${dest} (${tag}, asset ${asset})"

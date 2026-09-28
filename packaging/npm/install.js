@@ -80,6 +80,16 @@ async function main() {
   if (process.platform !== "win32") {
     fs.chmodSync(dest, 0o755);
   }
+  // Strip Gatekeeper quarantine until darwin assets are signed + notarized (#41).
+  if (process.platform === "darwin") {
+    try {
+      execFileSync("xattr", ["-d", "com.apple.quarantine", dest], {
+        stdio: "ignore",
+      });
+    } catch {
+      // Attribute may already be absent.
+    }
+  }
 
   // Smoke: binary should print version.
   try {

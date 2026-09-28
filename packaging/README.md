@@ -22,6 +22,7 @@ packaging/
   aur/           Arch PKGBUILD for AUR
   winget/        winget manifest generator + per-version output
   repo/          apt/dnf Pages templates + build-pages-repos.sh
+  macos/         Apple Developer ID + notarization (enable when licensed)
 ```
 
 ## Org repos (create once)
@@ -42,8 +43,12 @@ gh repo create openhat-security/packages --public --description "apt + dnf repos
 | `HOMEBREW_TAP_TOKEN` / `SCOOP_TOKEN` | Optional overrides instead of `PACKAGING_TOKEN` |
 | `WINGET_PAT` | Auto-PR to `microsoft/winget-pkgs` |
 | `GPG_PRIVATE_KEY` | Optional signing for apt InRelease (unset = `trusted=yes`) |
+| `MACOS_SIGN_P12` / `MACOS_SIGN_PASSWORD` | Developer ID `.p12` (base64) + password — see [`macos/`](macos/) |
+| `MACOS_NOTARY_KEY` / `MACOS_NOTARY_KEY_ID` / `MACOS_NOTARY_ISSUER_ID` | App Store Connect API key for notarization |
 
 `PACKAGING_TOKEN` should be a fine-grained PAT (or classic) with **contents: write** on `homebrew-tap`, `scoop-bucket`, and `packages`. Without it, GoReleaser still publishes the GitHub Release; brew/scoop upload is skipped (do **not** fall back to `GITHUB_TOKEN` — it cannot write other repos).
+
+macOS Gatekeeper: darwin binaries are unsigned until Apple Developer secrets are set ([#41](https://github.com/openhat-security/runhug/issues/41)). Setup checklist: [`macos/README.md`](macos/README.md).
 
 To re-publish npm for an existing tag: Actions → Release → Run workflow → set tag `vX.Y.Z` with **npm_only**.
 

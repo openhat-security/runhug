@@ -93,6 +93,8 @@ npx runhug wizard
 curl -fsSL https://raw.githubusercontent.com/openhat-security/runhug/main/scripts/install.sh | bash
 ```
 
+macOS Gatekeeper: until darwin builds are Apple-notarized ([#41](https://github.com/openhat-security/runhug/issues/41)), prefer Homebrew or the install script above (it clears quarantine). Manual download: `xattr -d com.apple.quarantine ./runhug_*_darwin_*`.
+
 **Direct binary (Windows PowerShell):**
 
 ```powershell

@@ -43,6 +43,13 @@ jobs:
           # Do not fall back to GITHUB_TOKEN — it cannot write to homebrew-tap / scoop-bucket.
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN || secrets.PACKAGING_TOKEN }}
           SCOOP_TOKEN: ${{ secrets.SCOOP_TOKEN || secrets.PACKAGING_TOKEN }}
+          # Apple Developer ID + notarization (issue #41). Leave unset until enrolled —
+          # GoReleaser skips notarize when MACOS_SIGN_P12 is empty.
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
 
   npm:
     needs: goreleaser
