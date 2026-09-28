@@ -37,8 +37,8 @@
     <text x="96" y="390" fill="#94a3b8">RunPod serverless vLLM or GCP COS</text>
     <text x="72" y="422" fill="#5eead4" font-weight="700">3</text>
     <text x="96" y="422" fill="#94a3b8">Use it anywhere.</text>
-    <text x="72" y="422" fill="#5eead4" font-weight="700"> </text>
-    <text x="96" y="422" fill="#94a3b8">*OpenAI Compatible URL, Claude Code, OpenCode, and more.*</text>
+    <text x="72" y="454" fill="#5eead4" font-weight="700"> </text>
+    <text x="96" y="454" fill="#94a3b8">*OpenAI Compatible URL, Claude Code, OpenCode, and more.*</text>
 
   </g>
 
