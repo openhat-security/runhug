@@ -8,11 +8,23 @@ expected.
 
 ## Current workaround
 
+**Homebrew (your case):**
+
+```bash
+xattr -dr com.apple.quarantine /opt/homebrew/Caskroom/runhug
+# Intel Homebrew prefix:
+# xattr -dr com.apple.quarantine /usr/local/Caskroom/runhug
+```
+
+**Manual / curl install:**
+
 ```bash
 xattr -d com.apple.quarantine "$(command -v runhug)"
 ```
 
 `scripts/install.sh` and the npm postinstall strip quarantine after download.
+Homebrew casks get a GoReleaser `post` install hook that runs the same `xattr -dr`
+(next release after that hook lands in the tap).
 
 Prefer Homebrew when possible:
 
