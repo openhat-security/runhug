@@ -61,9 +61,18 @@ func TestSearchHelpMentionsQueryAndDescriptions(t *testing.T) {
 	registerSearchFlags(fs)
 	fs.PrintDefaults()
 	s := buf.String()
-	for _, want := range []string{"-q", "-query", "description", "positional", "semantic", "nomic-embed-text", "no-semantic", "keyword", "wrap", "word-wrap", "-ww", "-online", "-hub", "local", "HF_TOKEN", "rate-limited"} {
+	for _, want := range []string{"-q", "-query", "description", "positional", "semantic", "no-semantic", "keyword", "wrap", "word-wrap", "-ww", "-online", "-hub", "local", "HF_TOKEN", "rate-limited", "RUNHUG_OLLAMA_EMBED"} {
 		if !strings.Contains(s, want) {
-			t.Fatalf("search -h missing %q\n%s", want, s)
+			t.Fatalf("search flags missing %q\n%s", want, s)
+		}
+	}
+
+	buf.Reset()
+	printSearchHelp(&buf)
+	help := buf.String()
+	for _, want := range []string{"usage:", "runhug search", "--query", "--online", "--verbose", "example:"} {
+		if !strings.Contains(help, want) {
+			t.Fatalf("search help missing %q\n%s", want, help)
 		}
 	}
 }
@@ -143,9 +152,10 @@ func TestPrintHubResultsWrapsOnlyModel(t *testing.T) {
 func TestPrintHubResultsHasActionsColumn(t *testing.T) {
 	var buf bytes.Buffer
 	printHubResults(&buf, hubView{
-		Models: []hf.Model{{ID: "org/short", Likes: 1, Downloads: 1, Tags: []string{"safetensors"}}},
-		Sort:   "relevance",
-		Limit:  5,
+		Models:  []hf.Model{{ID: "org/short", Likes: 1, Downloads: 1, Tags: []string{"safetensors"}}},
+		Sort:    "relevance",
+		Limit:   5,
+		Verbose: true,
 	})
 	s := buf.String()
 	if !strings.Contains(s, "ACTIONS") {

@@ -58,9 +58,6 @@ func cmdLocalAdd(args []string) error {
 	}
 
 	if *base == "" && *gguf == "" && fs.NArg() == 0 {
-		if err := runtime.EnsureOllama(""); err != nil {
-			fmt.Fprintf(os.Stderr, "ollama     %v\n", err)
-		}
 		return registerFound(reg, find.Scan(), *pick, *all, *listOnly, *register, "", *name, hubOpts{
 			Sort:    *sortKey,
 			Limit:   *limit,
@@ -107,7 +104,6 @@ func cmdLocalAdd(args []string) error {
 			break
 		}
 		if !strings.Contains(arg, "/") {
-			_ = runtime.EnsureOllama("")
 			hits := find.Filter(find.Scan(), arg)
 			opts := hubOpts{Sort: *sortKey, Limit: *limit, Command: localPickCmd(*pick)}
 			if *register || *all {
@@ -182,7 +178,7 @@ func registerFound(reg *store.Registry, hits []find.Found, pick int, all, listOn
 	if len(hits) == 0 {
 		heading(w, "No local models yet")
 		fmt.Fprintln(w, "Looked in ~/models, ~/gguf, ~/.ollama/models,")
-		fmt.Fprintln(w, "Hugging Face / LM Studio caches, $RVP_CACHE, and $RVP_MODELS.")
+		fmt.Fprintln(w, "Hugging Face Hub ($HF_HOME, ~/.cache/huggingface/hub), LM Studio, $RVP_CACHE, and $RVP_MODELS.")
 		fmt.Fprintln(w)
 		if query != "" && !doRegister && !all {
 			return searchAndPrint(hubQueryFromName(query), opts)
@@ -205,6 +201,9 @@ func registerFound(reg *store.Registry, hits []find.Found, pick int, all, listOn
 			if opts.Command == "" {
 				opts.Command = localPickCmd(pick)
 			}
+			// Lexical Hub/index search only — semantic embed would wake Ollama
+			// and dump GIN / llama-server load logs into this TTY.
+			opts.DisableSemantic = true
 			return searchAndPrint(hubQueryFromFound(hits[pick-1]), opts)
 		}
 		hits = hits[pick-1 : pick]

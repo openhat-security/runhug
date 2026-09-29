@@ -2,8 +2,8 @@ package find
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/adamsiwiec1/runhug/internal/hf"
@@ -32,6 +32,7 @@ func Roots() []string {
 	if dir, err := hf.CacheDir(); err == nil {
 		out = append(out, dir)
 	}
+	out = append(out, huggingfaceHubRoots()...)
 	if home != "" {
 		out = append(out,
 			filepath.Join(home, "models"),
@@ -41,16 +42,47 @@ func Roots() []string {
 			filepath.Join(home, "gguf"),
 			filepath.Join(home, ".lmstudio", "models"),
 			filepath.Join(home, "Library", "Application Support", "LM Studio", "models"),
+			filepath.Join(home, ".unsloth", "models"),
 		)
 	}
 	if cache != "" {
 		out = append(out,
 			filepath.Join(cache, "lm-studio", "models"),
 			filepath.Join(cache, "llama.cpp"),
-			filepath.Join(cache, "huggingface", "hub"),
 		)
 	}
 	return uniqExisting(out)
+}
+
+// huggingfaceHubRoots returns HF Hub cache dirs (HUGGINGFACE_HUB_CACHE, HF_HOME[/hub],
+// ~/.cache/huggingface/hub, and os.UserCacheDir()/huggingface/hub). On macOS the Hub
+// often lives under ~/.cache or HF_HOME while Go's UserCacheDir is ~/Library/Caches.
+func huggingfaceHubRoots() []string {
+	var out []string
+	add := func(p string) {
+		p = strings.TrimSpace(expandHome(p))
+		if p == "" {
+			return
+		}
+		out = append(out, p)
+		base := filepath.Base(filepath.Clean(p))
+		if !strings.EqualFold(base, "hub") {
+			out = append(out, filepath.Join(p, "hub"))
+		}
+	}
+	if v := strings.TrimSpace(os.Getenv("HUGGINGFACE_HUB_CACHE")); v != "" {
+		add(v)
+	}
+	if v := strings.TrimSpace(os.Getenv("HF_HOME")); v != "" {
+		add(v)
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		add(filepath.Join(home, ".cache", "huggingface", "hub"))
+	}
+	if cache, err := os.UserCacheDir(); err == nil && cache != "" {
+		add(filepath.Join(cache, "huggingface", "hub"))
+	}
+	return out
 }
 
 func Scan() []Found {
@@ -59,7 +91,9 @@ func Scan() []Found {
 
 func scanRoots(roots []string) []Found {
 	var out []Found
-	seen := map[string]bool{}
+	seenPath := map[string]bool{}
+	seenKey := map[string]bool{} // basename|size — collapse duplicate Hub caches
+	var seenFiles []os.FileInfo
 	for _, root := range roots {
 		_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 			if err != nil || d == nil {
@@ -90,18 +124,34 @@ func scanRoots(roots []string) []Found {
 			if err != nil {
 				return nil
 			}
-			if seen[abs] {
+			if seenPath[abs] {
 				return nil
 			}
-			seen[abs] = true
-			info, err := d.Info()
-			var size int64
-			if err == nil {
-				size = info.Size()
+			// Follow symlinks (HF hub snapshots → blobs/). Skip broken/incomplete downloads.
+			info, err := os.Stat(abs)
+			if err != nil || !info.Mode().IsRegular() {
+				return nil
 			}
+			size := info.Size()
+			if size < 1<<20 { // < 1 MiB — skip vocab stubs / empty placeholders
+				return nil
+			}
+			for _, prev := range seenFiles {
+				if os.SameFile(prev, info) {
+					return nil
+				}
+			}
+			base := strings.TrimSuffix(d.Name(), filepath.Ext(d.Name()))
+			key := strings.ToLower(base) + "|" + strconv.FormatInt(size, 10)
+			if seenKey[key] {
+				return nil
+			}
+			seenPath[abs] = true
+			seenKey[key] = true
+			seenFiles = append(seenFiles, info)
 			out = append(out, Found{
 				Kind:   "gguf",
-				Name:   strings.TrimSuffix(d.Name(), ".gguf"),
+				Name:   base,
 				Path:   abs,
 				Size:   size,
 				Source: root,
@@ -129,42 +179,27 @@ func Filter(in []Found, q string) []Found {
 func ollamaModels() []Found {
 	seen := map[string]bool{}
 	var out []Found
-	add := func(name, source string) {
+	for _, name := range OllamaNames() {
 		name = strings.TrimSpace(name)
 		if name == "" || seen[name] {
-			return
+			continue
 		}
 		seen[name] = true
 		out = append(out, Found{
 			Kind:   "ollama",
 			Name:   name,
 			Path:   name,
-			Source: source,
+			Source: "ollama",
 		})
 	}
-	for _, name := range ollamaManifestNames() {
-		add(name, "ollama")
-	}
-	bin, err := exec.LookPath("ollama")
-	if err != nil {
-		return out
-	}
-	raw, err := exec.Command(bin, "list").Output()
-	if err != nil {
-		return out
-	}
-	for i, line := range strings.Split(string(raw), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || i == 0 && strings.HasPrefix(strings.ToUpper(line), "NAME") {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-		add(fields[0], "ollama")
-	}
 	return out
+}
+
+// OllamaNames returns installed Ollama tags from on-disk manifests (no HTTP).
+// Prefer this over `ollama list` /api/tags so a noisy serve attached to the TTY
+// does not dump GIN access logs into the user's terminal.
+func OllamaNames() []string {
+	return ollamaManifestNames()
 }
 
 func ollamaHome() string {

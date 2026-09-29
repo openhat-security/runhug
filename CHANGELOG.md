@@ -7,6 +7,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `runhug inspect`: Alternatives section (same-repo lighter GGUF quants + related Hub ports/siblings), capped at 3; JSON `alternatives`; Next suggests top pick.
+
+### Fixed
+- Quiet CLI by default: search no longer auto-wakes Ollama for embed rerank (use `HF_TOKEN` or `RUNHUG_OLLAMA_EMBED=1`); hide rank notes / source / ACTIONS behind `--verbose` / `RUNHUG_VERBOSE`.
+- Quiet local servers by default: ollama `serve`, llama-server, and mlx redirect to `/dev/null`.
+- `runhug local` / discover: no `/api/tags` or `ollama list`; `local add --pick` skips semantic embed.
+- Local GGUF scan: honor `HF_HOME` / `HUGGINGFACE_HUB_CACHE` and `~/.cache/huggingface/hub`; follow snapshot→blob symlinks; skip broken/incomplete downloads.
+- Subcommand help: bare `inspect` / `deploy` / `search` / `recommend` (and `recommend gpu`) print usage + flags instead of a one-line usage error.
+
 ## [0.3.0] - 2026-09-29
 
 ### Added

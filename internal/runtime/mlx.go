@@ -18,11 +18,15 @@ func StartMLX(model string, port int) (*exec.Cmd, error) {
 	}
 	fmt.Fprintf(os.Stderr, "mlx        %s\n", strings.Join(argv, " "))
 	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
+	cleanup, err := discardChildIO(cmd)
+	if err != nil {
 		return nil, err
 	}
+	if err := cmd.Start(); err != nil {
+		cleanup()
+		return nil, err
+	}
+	cleanup()
 	if err := WaitPort(port, 3*time.Minute); err != nil {
 		_ = cmd.Process.Kill()
 		return nil, fmt.Errorf("mlx_lm.server: %w (first load downloads the Hub repo)", err)

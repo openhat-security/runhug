@@ -153,43 +153,6 @@ func (o *Ollama) postOpenAI(ctx context.Context, texts []string) ([][]float32, e
 	return out, nil
 }
 
-type ollamaTags struct {
-	Models []struct {
-		Name  string `json:"name"`
-		Model string `json:"model"`
-	} `json:"models"`
-}
-
-func listOllamaEmbed(ctx context.Context, base string) string {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/api/tags", nil)
-	if err != nil {
-		return ""
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", version.Name+"/"+version.Version)
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return ""
-	}
-	defer res.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(res.Body, 2<<20))
-	if err != nil || res.StatusCode >= 300 {
-		return ""
-	}
-	var tags ollamaTags
-	if err := json.Unmarshal(raw, &tags); err != nil {
-		return ""
-	}
-	var names []string
-	for _, m := range tags.Models {
-		names = append(names, m.Name)
-		if m.Model != "" && m.Model != m.Name {
-			names = append(names, m.Model)
-		}
-	}
-	return PickOllamaEmbed(names)
-}
-
 // PickOllamaEmbed chooses a local embedding model. Instruct/chat names score 0.
 func PickOllamaEmbed(names []string) string {
 	best, bestScore := "", 0

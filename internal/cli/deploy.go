@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -18,6 +19,10 @@ import (
 )
 
 func cmdDeploy(args []string) error {
+	if len(args) == 0 || isHelpArg(args[0]) {
+		printDeployHelp(os.Stdout)
+		return nil
+	}
 	// Peek --provider before RunPod flag parse so GCP-only flags (--project, …) work.
 	if p, ok := peekProvider(args); ok {
 		switch strings.ToLower(p) {
@@ -65,7 +70,8 @@ func cmdDeploy(args []string) error {
 	}
 	_ = provider // already handled via peek; kept for --help
 	if fs.NArg() < 1 {
-		return fmt.Errorf("usage: runhug deploy <org/model>")
+		printDeployHelp(os.Stderr)
+		return fmt.Errorf("model required")
 	}
 	modelID := fs.Arg(0)
 	env := config.Load()
@@ -280,6 +286,24 @@ func cmdDeploy(args []string) error {
 		"runhug delete "+modelID,
 	)
 	return nil
+}
+
+func printDeployHelp(w io.Writer) {
+	helpUsage(w, "runhug deploy <org/model>")
+	fmt.Fprintln(w, dim("Serverless vLLM on RunPod · optional GCP Spot via --provider gcp"))
+	fmt.Fprintln(w)
+
+	helpSection(w, "flags")
+	helpFlag(w, "--provider", "runpod (default) or gcp")
+	helpFlag(w, "--gpu --gpu-count", "pool / GPUs per worker")
+	helpFlag(w, "--max-len --disk", "context length / container disk")
+	helpFlag(w, "--estimate -e", "full cost block on the plan")
+	helpFlag(w, "--yes --dry-run --json", "confirm / plan-only / JSON")
+	helpFlag(w, "--verbose -v", "assumptions + env dump")
+	fmt.Fprintln(w)
+
+	fmt.Fprintf(w, "%s %s\n", dim("also:"), cyan("runhug deploy --provider gcp <model>"))
+	fmt.Fprintf(w, "%s %s\n", dim("example:"), cyan("runhug deploy Qwen/Qwen2.5-7B-Instruct --dry-run"))
 }
 
 func inspectEstimate(m hf.Model, format hf.Format, maxLen int) sizing.Estimate {

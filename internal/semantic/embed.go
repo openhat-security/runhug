@@ -3,9 +3,11 @@ package semantic
 import (
 	"context"
 	"math"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/adamsiwiec1/runhug/internal/find"
 	"github.com/adamsiwiec1/runhug/internal/runtime"
 )
 
@@ -14,16 +16,15 @@ const (
 	// via Inference feature-extraction (no local download).
 	HFMiniLM = "sentence-transformers/all-MiniLM-L6-v2"
 
-	embedTimeout   = 20 * time.Second
-	discoverBudget = 800 * time.Millisecond
-	ollamaBatch    = 16
-	hfBatch        = 8
-	hfWorkers      = 4
-	maxEmbedChars  = 1500
+	embedTimeout  = 20 * time.Second
+	ollamaBatch   = 16
+	hfBatch       = 8
+	hfWorkers     = 4
+	maxEmbedChars = 1500
 )
 
 // LexicalNote is printed when the user wanted semantic rank but no embedder ran.
-const LexicalNote = "lexical Hub search — pull nomic-embed-text or set HF_TOKEN for semantic rank"
+const LexicalNote = "lexical search — set HF_TOKEN for semantic rank (or RUNHUG_OLLAMA_EMBED=1)"
 
 // Embedder turns a query and documents into vectors. Chat completions are not used.
 type Embedder interface {
@@ -31,26 +32,38 @@ type Embedder interface {
 	Embed(ctx context.Context, query string, docs []string) (q []float32, docVecs [][]float32, err error)
 }
 
-// Discover prefers a local Ollama embedding model (nomic-embed-text if present),
-// then Hugging Face Inference when HF_TOKEN is set. Returns nil if neither works.
-// Does not pull models and does not use instruct/chat weights as embedders.
+// Discover returns an embedder for search rerank that will not wake a noisy
+// local Ollama (GIN / model-load logs on a TTY-attached serve).
+// Prefer HF Inference when HF_TOKEN is set. Opt into local Ollama with
+// RUNHUG_OLLAMA_EMBED=1 (tags still read from disk, no /api/tags).
 func Discover(ctx context.Context, hfToken string) Embedder {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	dctx, cancel := context.WithTimeout(ctx, discoverBudget)
-	defer cancel()
+	_ = ctx
 
-	if runtime.PortOpen(runtime.OllamaPort) {
-		base := strings.TrimSuffix(runtime.OllamaURL, "/v1")
-		if model := listOllamaEmbed(dctx, base); model != "" {
-			return &Ollama{BaseURL: base, Model: model}
-		}
-	}
 	if strings.TrimSpace(hfToken) != "" {
 		return &HF{Token: strings.TrimSpace(hfToken), Model: HFMiniLM}
 	}
+	if strings.TrimSpace(os.Getenv("RUNHUG_OLLAMA_EMBED")) == "" {
+		return nil
+	}
+	if runtime.PortOpen(runtime.OllamaPort) {
+		base := strings.TrimSuffix(runtime.OllamaURL, "/v1")
+		if model := PickOllamaEmbed(find.OllamaNames()); model != "" {
+			return &Ollama{BaseURL: base, Model: model}
+		}
+	}
 	return nil
+}
+
+// LocalOllamaEmbed returns an installed Ollama embedding tag when serve is up,
+// from on-disk manifests (no HTTP). Used for status / init, not auto search.
+func LocalOllamaEmbed() string {
+	if !runtime.PortOpen(runtime.OllamaPort) {
+		return ""
+	}
+	return PickOllamaEmbed(find.OllamaNames())
 }
 
 func clipEmbed(s string) string {

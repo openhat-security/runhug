@@ -23,13 +23,16 @@ type hubView struct {
 	// WrapWidth > 0 wraps MODEL across lines at that rune width.
 	// 0 = single-line ellipsis truncate (default column max 48).
 	WrapWidth int
+	Verbose   bool
 }
 
 type hubOpts struct {
-	Sort      string
-	Limit     int
-	Command   string
-	WrapWidth int
+	Sort            string
+	Limit           int
+	Command         string
+	WrapWidth       int
+	DisableSemantic bool
+	Verbose         bool
 }
 
 func printHubResults(w io.Writer, v hubView) {
@@ -44,18 +47,20 @@ func printHubResults(w io.Writer, v hubView) {
 		title = fmt.Sprintf("%s  %s", title, v.Query)
 	}
 	heading(w, fmt.Sprintf("%s  (%d)", title, len(v.Models)))
-	if v.Sort != "" || v.Limit > 0 {
-		fmt.Fprintf(w, "%s  %s", dim("sorted by"), sortLabel(v.Sort))
-		if v.Limit > 0 {
-			fmt.Fprintf(w, "   %s %d", dim("--limit"), v.Limit)
+	if v.Verbose {
+		if v.Sort != "" || v.Limit > 0 {
+			fmt.Fprintf(w, "%s  %s", dim("sorted by"), sortLabel(v.Sort))
+			if v.Limit > 0 {
+				fmt.Fprintf(w, "   %s %d", dim("--limit"), v.Limit)
+			}
+			fmt.Fprintln(w)
 		}
-		fmt.Fprintln(w)
-	}
-	if v.RankSource != "" {
-		fmt.Fprintf(w, "%s  %s\n", dim("source"), v.RankSource)
-	}
-	if v.Sort != "" || v.Limit > 0 || v.RankSource != "" {
-		fmt.Fprintln(w)
+		if v.RankSource != "" {
+			fmt.Fprintf(w, "%s  %s\n", dim("source"), v.RankSource)
+		}
+		if v.Sort != "" || v.Limit > 0 || v.RankSource != "" {
+			fmt.Fprintln(w)
+		}
 	}
 	if len(v.Models) == 0 {
 		if strings.Contains(strings.ToLower(v.RankSource), "hub") {
@@ -138,8 +143,10 @@ func printHubResults(w io.Writer, v hubView) {
 		}
 	}
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, dim("ACTIONS  🔗 opens Hub  ·  📋 / copy N copies model id  ·  or search --copy N"))
-	fmt.Fprintln(w)
+	if v.Verbose {
+		fmt.Fprintln(w, dim("ACTIONS  🔗 opens Hub  ·  📋 / copy N copies model id  ·  or search --copy N"))
+		fmt.Fprintln(w)
+	}
 
 	if v.SkipFooter {
 		return

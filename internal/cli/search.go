@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -12,6 +13,8 @@ import (
 	"github.com/adamsiwiec1/runhug/internal/family"
 	"github.com/adamsiwiec1/runhug/internal/hf"
 	"github.com/adamsiwiec1/runhug/internal/hparams"
+	"github.com/adamsiwiec1/runhug/internal/recommend"
+	"github.com/adamsiwiec1/runhug/internal/runtime"
 )
 
 type searchFlagVals struct {
@@ -22,6 +25,7 @@ type searchFlagVals struct {
 	limit                   *int
 	semanticOn, noSemantic  *bool
 	keyword, online, hub    *bool
+	verbose                 *bool
 	wrap, wordWrap, ww      *int
 }
 
@@ -37,11 +41,13 @@ func registerSearchFlags(fs *flag.FlagSet) *searchFlagVals {
 	sf.engine = fs.String("engine", "", "engine filter (vllm, gguf, …)")
 	sf.sort = fs.String("sort", "relevance", "relevance (default; embedding rerank when available), likes, or downloads — sorts the local index pool (or Hub pool with --online)")
 	sf.limit = fs.Int("limit", 15, "rows to show (1-100)")
-	sf.semanticOn = fs.Bool("semantic", true, "rerank with local embeddings when nomic-embed-text (Ollama) is available")
-	sf.noSemantic = fs.Bool("no-semantic", false, "disable embedding rerank (lexical index search only)")
+	sf.semanticOn = fs.Bool("semantic", true, "rerank with embeddings when HF_TOKEN is set (HF Inference); local Ollama needs RUNHUG_OLLAMA_EMBED=1")
+	sf.noSemantic = fs.Bool("no-semantic", false, "disable embedding rerank (lexical only)")
 	sf.keyword = fs.Bool("keyword", false, "alias for --no-semantic (lexical-only)")
 	sf.online = fs.Bool("online", false, "live Hugging Face Hub search instead of the local SQLite index (rate-limited; set HF_TOKEN)")
 	sf.hub = fs.Bool("hub", false, "alias for --online")
+	sf.verbose = fs.Bool("verbose", false, "show rank notes, source line, and ACTIONS legend (or set RUNHUG_VERBOSE=1)")
+	fs.BoolVar(sf.verbose, "v", false, "alias for --verbose")
 	sf.wrap, sf.wordWrap, sf.ww = addWrapFlags(fs)
 	return sf
 }
@@ -63,6 +69,10 @@ func (sf *searchFlagVals) request(query string) searchRequest {
 }
 
 func cmdSearch(args []string) error {
+	if len(args) > 0 && isHelpArg(args[0]) {
+		printSearchHelp(os.Stdout)
+		return nil
+	}
 	fs := newFlagSet("search")
 	sf := registerSearchFlags(fs)
 	asJSON := fs.Bool("json", false, "print JSON")
@@ -71,6 +81,10 @@ func cmdSearch(args []string) error {
 		return err
 	}
 	query := resolveSearchQuery(sf.queryFlag, strings.Join(fs.Args(), " "))
+	if strings.TrimSpace(query) == "" && len(args) == 0 {
+		printSearchHelp(os.Stdout)
+		return nil
+	}
 	req := sf.request(query)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -91,6 +105,7 @@ func cmdSearch(args []string) error {
 		RankSource: meta.RankSource,
 		Queries:    meta.Queries,
 		WrapWidth:  resolveWrapWidth(*sf.wrap, *sf.wordWrap, *sf.ww),
+		Verbose:    *sf.verbose || runtime.Verbose(),
 	})
 	if *copyIdx > 0 {
 		if *copyIdx > len(models) {
@@ -120,10 +135,11 @@ func searchAndPrint(query string, opts hubOpts) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	models, meta, err := searchModels(ctx, searchRequest{
-		Query: query,
-		Task:  "any",
-		Sort:  opts.Sort,
-		Limit: opts.Limit,
+		Query:           query,
+		Task:            "any",
+		Sort:            opts.Sort,
+		Limit:           opts.Limit,
+		DisableSemantic: opts.DisableSemantic,
 	})
 	if err != nil {
 		return err
@@ -137,6 +153,7 @@ func searchAndPrint(query string, opts hubOpts) error {
 		RankSource: meta.RankSource,
 		Queries:    meta.Queries,
 		WrapWidth:  opts.WrapWidth,
+		Verbose:    opts.Verbose || runtime.Verbose(),
 	})
 	return nil
 }
@@ -206,6 +223,10 @@ func yn(b bool) string {
 }
 
 func cmdInspect(args []string) error {
+	if len(args) == 0 || isHelpArg(args[0]) {
+		printInspectHelp(os.Stdout)
+		return nil
+	}
 	fs := newFlagSet("inspect")
 	maxLen := fs.Int("max-len", 8192, "context length used for the VRAM estimate")
 	gpu := fs.String("gpu", "", "force this GPU pool in the recommendation")
@@ -214,19 +235,22 @@ func cmdInspect(args []string) error {
 		return err
 	}
 	if fs.NArg() < 1 {
-		return fmt.Errorf("usage: runhug inspect <org/model>")
+		printInspectHelp(os.Stderr)
+		return fmt.Errorf("model required")
 	}
 	modelID := fs.Arg(0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	env := config.Load()
-	model, err := hf.New(env.HFToken).Get(ctx, modelID)
+	client := hf.New(env.HFToken)
+	model, err := client.Get(ctx, modelID)
 	if err != nil {
 		return err
 	}
 	format := hf.DetectFormat(*model)
 	est := inspectEstimate(*model, format, *maxLen)
+	alts := recommend.SuggestAlternatives(ctx, client, *model, format, est, 3)
 
 	var plan any
 	var recText string
@@ -241,10 +265,11 @@ func cmdInspect(args []string) error {
 
 	if *asJSON {
 		return writeJSON(map[string]any{
-			"model":    model,
-			"format":   format,
-			"estimate": est,
-			"gpu":      plan,
+			"model":        model,
+			"format":       format,
+			"estimate":     est,
+			"gpu":          plan,
+			"alternatives": alts,
 		})
 	}
 
@@ -290,6 +315,7 @@ func cmdInspect(args []string) error {
 	for _, n := range est.Notes {
 		fmt.Fprintf(os.Stdout, "  %s  %s\n", yellow(padRight("note", 9)), n)
 	}
+	printInspectAlternatives(os.Stdout, alts)
 	fmt.Fprintln(os.Stdout)
 	next := []string{
 		"runhug deploy " + model.RepoID(),
@@ -301,6 +327,82 @@ func cmdInspect(args []string) error {
 			"runhug search " + model.RepoID() + " --sort likes",
 		}
 	}
+	if len(alts) > 0 {
+		top := alts[0].RepoID
+		next = append([]string{
+			"runhug inspect " + top,
+			"runhug deploy " + top,
+		}, next...)
+	}
 	commands(os.Stdout, "Next:", next...)
 	return nil
+}
+
+func printInspectAlternatives(w io.Writer, alts []recommend.Alternative) {
+	if len(alts) == 0 {
+		return
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "%s  %s\n", boldYellow("Alternatives"), dim("(smaller / cheaper fits)"))
+	for i, a := range alts {
+		quant := a.Quant
+		if quant == "" {
+			quant = "—"
+		} else {
+			quant = strings.ToUpper(quant)
+		}
+		est := "—"
+		if a.RequiredGB > 0 {
+			est = fmt.Sprintf("~%.0f GB est", a.RequiredGB)
+		}
+		why := a.Why
+		if a.GGUFFile != "" {
+			why = "file=" + a.GGUFFile
+		}
+		fmt.Fprintf(w, "  %s  %s  %s  %s  %s\n",
+			cyan(fmt.Sprintf("%d", i+1)),
+			bold(padRight(a.RepoID, 32)),
+			yellow(padRight(quant, 8)),
+			dim(padRight(est, 12)),
+			dim(a.Engine+"  "+why),
+		)
+	}
+}
+
+func printInspectHelp(w io.Writer) {
+	helpUsage(w, "runhug inspect <org/model>")
+	fmt.Fprintln(w, dim("Hub card · VRAM estimate · cheaper / lower-quant alternatives"))
+	fmt.Fprintln(w)
+
+	helpSection(w, "shows")
+	helpCmd(w, "format / params", "engine, precision, weight + VRAM estimate")
+	helpCmd(w, "gpu", "suggested serverless pool (needs runhug connect)")
+	helpCmd(w, "alternatives", "up to 3 smaller / cheaper fits (GGUF quants + related Hub)")
+	fmt.Fprintln(w)
+
+	helpSection(w, "flags")
+	helpFlag(w, "--max-len", "context length for the VRAM estimate (default 8192)")
+	helpFlag(w, "--gpu", "force this GPU pool in the recommendation")
+	helpFlag(w, "--json", "print JSON (includes alternatives)")
+	fmt.Fprintln(w)
+
+	fmt.Fprintf(w, "%s %s\n", dim("example:"), cyan("runhug inspect Qwen/Qwen3.8-27B"))
+}
+
+func printSearchHelp(w io.Writer) {
+	helpUsage(w, "runhug search [query]")
+	fmt.Fprintln(w, dim("Local index by default · --online for live Hub"))
+	fmt.Fprintln(w)
+
+	helpSection(w, "flags")
+	helpFlag(w, "--query -q", "search query (same as positional)")
+	helpFlag(w, "--online --hub", "live Hugging Face Hub search")
+	helpFlag(w, "--sort", "relevance (default), likes, or downloads")
+	helpFlag(w, "--limit", "rows to show (1-100)")
+	helpFlag(w, "--author --task --engine", "filter by author / pipeline / engine")
+	helpFlag(w, "--verbose -v", "rank notes, source, ACTIONS legend")
+	helpFlag(w, "--json --copy N", "JSON output / copy row N to clipboard")
+	fmt.Fprintln(w)
+
+	fmt.Fprintf(w, "%s %s\n", dim("example:"), cyan("runhug search qwen gguf --sort likes"))
 }

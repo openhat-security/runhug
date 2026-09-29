@@ -22,9 +22,6 @@ func printFoundTable(w io.Writer, hits []find.Found) {
 		if name == "" {
 			name = h.Path
 		}
-		if h.Kind == "gguf" && h.Path != "" {
-			name = h.Path
-		}
 		fmt.Fprintf(tw, "  %d\t%s\t%s\t%s\n", i+1, h.Kind, bold(name), foundNote(h))
 	}
 	_ = tw.Flush()

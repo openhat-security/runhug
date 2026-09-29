@@ -67,8 +67,10 @@ func initSearchStack(yes bool, wantRuntime string, offerIndex bool) error {
 	printKV(os.Stdout, "ollama", ollamaStatus(ollamaUp))
 	if embedder != nil {
 		printKV(os.Stdout, "embedder", green(embedder.Label()))
+	} else if local := semantic.LocalOllamaEmbed(); local != "" {
+		printKV(os.Stdout, "embedder", dim(local+" (ollama) — search uses HF_TOKEN or lexical; set RUNHUG_OLLAMA_EMBED=1 to opt in"))
 	} else {
-		printKV(os.Stdout, "embedder", yellow("none — lexical search only until you pull nomic-embed-text or connect hf"))
+		printKV(os.Stdout, "embedder", yellow("none — lexical search; connect hf for cloud semantic rank"))
 	}
 	if env.HFToken != "" {
 		printKV(os.Stdout, "hf token", green("set (HF Inference embeddings available)"))

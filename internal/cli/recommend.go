@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -15,7 +16,11 @@ import (
 )
 
 func cmdRecommend(args []string) error {
-	if len(args) > 0 && strings.EqualFold(args[0], "gpu") {
+	if len(args) == 0 || isHelpArg(args[0]) {
+		printRecommendHelp(os.Stdout)
+		return nil
+	}
+	if strings.EqualFold(args[0], "gpu") {
 		return cmdRecommendGPU(args[1:])
 	}
 
@@ -38,7 +43,8 @@ func cmdRecommend(args []string) error {
 
 	query := resolveSearchQuery(queryFlag, strings.Join(fs.Args(), " "))
 	if strings.TrimSpace(query) == "" {
-		return fmt.Errorf("usage: runhug recommend \"best model for RAG on a 16GB laptop\"\n       runhug recommend -q \"…\" --candidates 8\n       runhug recommend gpu <org/model>")
+		printRecommendHelp(os.Stderr)
+		return fmt.Errorf("query required")
 	}
 
 	n := *candidates
@@ -198,6 +204,10 @@ func cmdRecommend(args []string) error {
 }
 
 func cmdRecommendGPU(args []string) error {
+	if len(args) == 0 || isHelpArg(args[0]) {
+		printRecommendGPUHelp(os.Stdout)
+		return nil
+	}
 	fs := newFlagSet("recommend-gpu")
 	gpuPool := fs.String("gpu", "", "force this Runpod GPU pool")
 	maxLen := fs.Int("max-len", 8192, "context length for VRAM estimate")
@@ -210,7 +220,8 @@ func cmdRecommendGPU(args []string) error {
 		return err
 	}
 	if fs.NArg() < 1 {
-		return fmt.Errorf("usage: runhug recommend gpu <org/model>")
+		printRecommendGPUHelp(os.Stderr)
+		return fmt.Errorf("model required")
 	}
 	modelID := fs.Arg(0)
 
@@ -314,6 +325,43 @@ func cmdRecommendGPU(args []string) error {
 		"runhug gpus --min-vram "+fmt.Sprintf("%.0f", adv.RequiredGB),
 	)
 	return nil
+}
+
+func printRecommendHelp(w io.Writer) {
+	helpUsage(w, "runhug recommend <query>")
+	fmt.Fprintln(w, dim("Shortlist models for a use-case · optional local LLM advisor"))
+	fmt.Fprintln(w)
+
+	helpSection(w, "commands")
+	helpCmd(w, "recommend <query>", "score a shortlist (+ advisor unless --no-llm)")
+	helpCmd(w, "recommend gpu <m>", "VRAM / GPU pool for one model")
+	fmt.Fprintln(w)
+
+	helpSection(w, "flags")
+	helpFlag(w, "--query -q", "use-case query (same as positional)")
+	helpFlag(w, "--candidates", "shortlist size (1-20, default 8)")
+	helpFlag(w, "--no-llm", "scored shortlist + GPU hints only")
+	helpFlag(w, "--online --hub", "allow live Hub search for shortlist")
+	helpFlag(w, "--json", "print JSON")
+	fmt.Fprintln(w)
+
+	fmt.Fprintf(w, "%s %s\n", dim("example:"), cyan(`runhug recommend "best model for RAG on a 16GB laptop"`))
+}
+
+func printRecommendGPUHelp(w io.Writer) {
+	helpUsage(w, "runhug recommend gpu <org/model>")
+	fmt.Fprintln(w, dim("VRAM estimate + suggested serverless GPU pool"))
+	fmt.Fprintln(w)
+
+	helpSection(w, "flags")
+	helpFlag(w, "--gpu", "force this Runpod GPU pool")
+	helpFlag(w, "--max-len", "context length for VRAM estimate")
+	helpFlag(w, "--estimate -e", "full cost block (cold/warm/daily)")
+	helpFlag(w, "--verbose -v", "cost assumptions + extra detail")
+	helpFlag(w, "--json", "print JSON")
+	fmt.Fprintln(w)
+
+	fmt.Fprintf(w, "%s %s\n", dim("example:"), cyan("runhug recommend gpu Qwen/Qwen2.5-7B-Instruct --estimate"))
 }
 
 func loadGPUCatalog(ctx context.Context) []runpod.GPU {

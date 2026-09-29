@@ -9,6 +9,7 @@ import (
 	"github.com/adamsiwiec1/runhug/internal/config"
 	"github.com/adamsiwiec1/runhug/internal/hf"
 	"github.com/adamsiwiec1/runhug/internal/index"
+	"github.com/adamsiwiec1/runhug/internal/runtime"
 	"github.com/adamsiwiec1/runhug/internal/semantic"
 )
 
@@ -98,7 +99,9 @@ func searchHubLive(ctx context.Context, req searchRequest, sortKey string) ([]hf
 	}
 	if note != "" {
 		meta.Notes = note
-		fmt.Fprintln(os.Stderr, dim(note))
+		if runtime.Verbose() {
+			fmt.Fprintln(os.Stderr, dim(note))
+		}
 	}
 	if sortKey == "likes" || sortKey == "downloads" {
 		meta.RankSource = sortKey + " (from expanded pool)"
@@ -153,7 +156,9 @@ func searchIndexAtPath(ctx context.Context, req searchRequest, sortKey string, p
 		})
 		if note != "" {
 			meta.Notes = note
-			fmt.Fprintln(os.Stderr, dim(note))
+			if runtime.Verbose() {
+				fmt.Fprintln(os.Stderr, dim(note))
+			}
 		}
 		if strings.HasPrefix(note, "semantic rank") {
 			meta.RankSource = source + " + semantic"

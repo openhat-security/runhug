@@ -107,7 +107,7 @@ func printUsage(w io.Writer) {
 	helpCmd(w, "search [query]", "local index; --online for hub")
 	helpCmd(w, "recommend [query]", "shortlist + optional advisor")
 	helpCmd(w, "recommend gpu <m>", "gpu / vram for one model")
-	helpCmd(w, "inspect <model>", "hub card + vram estimate")
+	helpCmd(w, "inspect <model>", "hub card, vram, cheaper alternatives")
 	helpCmd(w, "update", "refresh index")
 	helpCmd(w, "upgrade", "update this CLI")
 	fmt.Fprintln(w)
@@ -150,6 +150,15 @@ func newFlagSet(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	return fs
+}
+
+func isHelpArg(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "-h", "--help", "help":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseFlags(fs *flag.FlagSet, args []string) error {

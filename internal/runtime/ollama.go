@@ -19,12 +19,17 @@ func EnsureOllama(bin string) error {
 		return nil
 	}
 	cmd := exec.Command(bin, "serve")
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	detach(cmd)
-	if err := cmd.Start(); err != nil {
+	cleanup, err := discardChildIO(cmd)
+	if err != nil {
 		return fmt.Errorf("ollama serve: %w", err)
 	}
+	cmd.Env = append(os.Environ(), "OLLAMA_DEBUG=ERROR")
+	detach(cmd)
+	if err := cmd.Start(); err != nil {
+		cleanup()
+		return fmt.Errorf("ollama serve: %w", err)
+	}
+	cleanup() // child inherits the fd; parent drops its copy
 	if err := WaitPort(OllamaPort, 20*time.Second); err != nil {
 		return fmt.Errorf("ollama serve started (pid %d) but %w", cmd.Process.Pid, err)
 	}
@@ -45,6 +50,7 @@ func PullOllama(bin, name string) error {
 	}
 	fmt.Fprintf(os.Stderr, "ollama pull  %s\n", name)
 	cmd := exec.Command(bin, "pull", name)
+	// Pull progress is intentional user feedback.
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
