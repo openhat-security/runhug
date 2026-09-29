@@ -1,23 +1,9 @@
 # Changelog
 
-## [0.1.6-beta.1] - 2026-09-17
-
-### Fixed
-- SQLite driver swapped from cgo-based `mattn/go-sqlite3` to pure-Go `modernc.org/sqlite`. Release binaries built with `CGO_ENABLED=0` previously hit a stub and failed to open the local index (`open local index: Binary was compiled with 'CGO_ENABLED=0'…`). Local `search` / `recommend` now work in statically-linked, cgo-free builds, and cross-OS releases no longer need a C toolchain.
-
-## [0.1.5] - 2026-09-15
-
-### Changed
-- Release asset names are now `runhug_<ver>_…` (install scripts prefer these; legacy `runhug-cli_` still accepted).
-- Version bump for the README-only docs cutover.
-
-
 All notable user-facing changes to runhug are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
 
 ## [0.2.2] - 2026-09-29
 
@@ -67,6 +53,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 - Live `deploy` create payload matches Runpod v2: top-level `type` (default `QUEUE`, matching `worker-v1-vllm`), `workers.idleTimeout`, and `scaling` as `{type:QUEUE_DELAY,queueDelay}` for QUEUE or `{type:REQUEST_COUNT,requestCount}` for LOAD_BALANCER (no `value`/`idleTimeout` in scaling). Optional `--endpoint-type LOAD_BALANCER` uses FastAPI LB URL `https://{id}.api.runpod.ai/v1` (not `/openai/v1`). QUEUE OpenAI URL remains `https://api.runpod.ai/v2/{id}/openai/v1`.
 
+## [0.1.6-beta.1] - 2026-09-17
+
+### Fixed
+- SQLite driver swapped from cgo-based `mattn/go-sqlite3` to pure-Go `modernc.org/sqlite`. Release binaries built with `CGO_ENABLED=0` previously hit a stub and failed to open the local index (`open local index: Binary was compiled with 'CGO_ENABLED=0'…`). Local `search` / `recommend` now work in statically-linked, cgo-free builds, and cross-OS releases no longer need a C toolchain.
+
+## [0.1.5] - 2026-09-15
+
+### Changed
+- Release asset names are now `runhug_<ver>_…` (install scripts prefer these; legacy `runhug-cli_` still accepted).
+- Version bump for the README-only docs cutover.
+
 ## [0.1.4-beta.3] - 2026-09-14
 
 ### Fixed
@@ -114,78 +111,35 @@ This project is in **beta**. Pre-releases use hyphen SemVer tags (`v0.1.4-beta.1
 ### Added
 - `ListOpts.MinLikes` / `MinDownloads` with downloads-desc early exit when a whole page is below the download floor.
 
-## [Unreleased]
+## [0.1.0] - 2026-09-14
+
+Initial public surface (consolidated from earlier unversioned notes).
 
 ### Added
 - Category SQLite **index packs** on GitHub Releases (`index-manifest.json`, `index-<category>.db`); `init` multi-select install; `update` watermark deltas / `update --packs`; `cmd/build-index-packs` + release workflow.
-
-
 - Default `search` uses the local/bundled SQLite index only and never calls the Hub when an index exists. Live Hub search is opt-in via `--online` / `--hub` (rate-limited; set `HF_TOKEN`). If no index exists, search tells you to run `update` or `init` instead of hitting the Hub.
 - Restored search table **ACTIONS** column (🔗 OSC-8 Hub link, 📋 plain) and footer hint for `copy N` / `search --copy N`.
 - Search is NLP/embeddings-only: removed local chat re-rank (`localllm` / `recommend.Rerank` chat path).
 - `init` sets up nomic-embed-text / `connect hf` + optional index (no Qwen chat starter).
 - Default Hub task is `auto`/`any` with image/audio intent detection; `--keyword` aliases `--no-semantic`.
+- `search -q` / `--query` is the same as a positional query (`--query` wins if both are set). Search matches model card descriptions as well as repo id/tags, and expands a small alias map (`hacking` → `pentest`, …) as extra Hub `search=` calls before local scoring.
+- `search --wrap N` / `--word-wrap N` / `-ww N` wraps MODEL names at N runes across multiple lines (clamped 12–80; 0 or omitted = ellipsis truncate at 48).
+- `search --copy N` copies the MODEL id for row N to the clipboard.
+- Semantic rerank when an embedder is available: local Ollama `nomic-embed-text` (or similar), else Hugging Face Inference `sentence-transformers/all-MiniLM-L6-v2` if `HF_TOKEN` is set. `--semantic` / `--no-semantic`.
+- `connect` / `disconnect` persist a Runpod API key in the user config dir (`runpod.key`, mode 0600). Key verified with `GET /v2/serverless` before save. `config.Load()` reads `RUNPOD_API_KEY` first, then the stored key.
+- `proxy` — OpenAI proxy on `127.0.0.1:8080/v1`. `serve` remains an alias.
+- `list` includes account Serverless endpoints when connected, marked **ours** (registry) vs other account endpoints. `deployments` is an alias.
+- ANSI colors with a `NO_COLOR` / non-TTY fallback.
 
 ### Changed
-- Rebranded CLI to **runhug-cli** (module `github.com/adamsiwiec1/runhug-cli`, binary `runhug-cli`)
-- Config directory is now XDG `~/.config/runhug-cli` (honors `XDG_CONFIG_HOME`); migrates from prior `runpod-vllm-proxy` locations on load
-- Prefer `RUNHUG_CONFIG` to override registry path; `RVP_CONFIG` still accepted during transition
+- Intermediate rename to **runhug-cli** (later superseded by `runhug` in 0.1.6): module `github.com/adamsiwiec1/runhug-cli`, config `~/.config/runhug-cli`, `RUNHUG_CONFIG` / legacy `RVP_CONFIG`.
+- `search --sort` is `relevance` (default), `likes`, or `downloads`.
+- `search` accepts `--license` and `--engine`.
+- `list` fetches remote endpoints automatically when a key is available (`--local` skips that).
 
 ### Fixed
-- `connect` Authorization header sanitization strips BOM/non-ASCII clipboard junk
-
-## [Unreleased]
-
-### Added
-
-- `search -q` / `--query` is the same as a positional query (`--query`
-  wins if both are set). Search matches model card descriptions as well
-  as repo id/tags, and expands a small alias map (`hacking` → `pentest`,
-  …) as extra Hub `search=` calls before local scoring.
-- `search --wrap N` / `--word-wrap N` / `-ww N` wraps MODEL names at N
-  runes across multiple lines (clamped 12–80; 0 or omitted = ellipsis
-  truncate at 48). Other columns stay on the first line only.
-- `search --copy N` copies the MODEL id for row N to the clipboard.
-- Semantic rerank of that candidate pool when an embedder is available:
-  local Ollama `nomic-embed-text` (or similar), else Hugging Face Inference
-  `sentence-transformers/all-MiniLM-L6-v2` if `HF_TOKEN` is set. The Hub
-  has no public semantic model-search API. `--semantic` (default when
-  an embedder exists) / `--no-semantic`. Chat instruct models are not
-  used as embedders.
-- `connect` / `disconnect` persist a Runpod API key in the user config dir
-  (`runpod.key`, mode 0600). `connect` prints
-  https://console.runpod.io/user/credentials?tab=api-key (does not open a
-  browser), then prompts for a key (hidden, never printed). `--key` skips
-  the prompt. Already connected: reports source without reprinting the
-  secret and offers to replace. The key is verified with
-  `GET /v2/serverless` before save. `config.Load()` reads `RUNPOD_API_KEY`
-  first, then the stored key.
-- `proxy` — OpenAI proxy on `127.0.0.1:8080/v1`. `serve` remains an alias.
-- `list` includes account Serverless endpoints when connected, marked
-  **ours** (registry) vs other account endpoints. `deployments` is an alias.
-- ANSI colors with a `NO_COLOR` / non-TTY fallback (no extra dependency).
-
-### Changed
-
-- `search --sort` is `relevance` (default; Hub text search, `sort` omitted),
-  `likes`, or `downloads`. Popularity sorts re-rank an expanded 100-hit
-  relevance pool (aliases + card descriptions) locally instead of asking
-  the Hub to sort by likes or downloads.
-- `search` accepts `--license` (`apache-2.0`, `mit`, `gemma`, `other`, …)
-  and `--engine` (`vllm`, `gguf`, …).
-- The product is Hub search, local pull (`init`), and Runpod deploy/list/proxy.
-- `list` fetches remote endpoints automatically when a key is available
-  (`--local` skips that). Next steps after init/deploy point at search,
-  inspect, connect, deploy, and proxy.
-- Hub tables are aligned columns; likes/downloads and engine tags are colored
-  when the terminal allows it.
+- `connect` Authorization header sanitization strips BOM/non-ASCII clipboard junk.
 
 ### Removed
-
 - `chat` (REPL and one-shot).
 - `quickstart` (use `search`).
-
-### Docs
-
-- README and VitePress guide lead with init, search, connect, deploy, list,
-  proxy.
