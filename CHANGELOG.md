@@ -7,6 +7,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-29
+
 ### Added
 - `demos/runhug.tape` — [charmbracelet/vhs](https://github.com/charmbracelet/vhs) recording of the dry-run tour (`make demo-vhs` → `assets/screenshots/runhug-demo.{gif,mp4}`).
 
