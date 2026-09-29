@@ -97,6 +97,16 @@ else
   chmod +x "$dest"
 fi
 
+# Gatekeeper: unsigned darwin binaries carry com.apple.quarantine from the download.
+# Strip it so first launch is not blocked (until we notarize — packaging/macos/README.md).
+if [ "$os" = "darwin" ]; then
+  if [ -w "$dest" ]; then
+    xattr -d com.apple.quarantine "$dest" 2>/dev/null || true
+  else
+    sudo xattr -d com.apple.quarantine "$dest" 2>/dev/null || true
+  fi
+fi
+
 echo "Installed ${BIN_NAME} → ${dest} (${tag}, asset ${asset})"
 case ":${PATH}:" in
   *":$(dirname "$dest"):"*) ;;
