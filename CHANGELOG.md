@@ -19,6 +19,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-29
+
 ### Fixed
 - macOS Gatekeeper: `scripts/install.sh` and npm postinstall strip `com.apple.quarantine` after download so unsigned darwin binaries are not blocked on first launch.
 
