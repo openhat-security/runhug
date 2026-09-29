@@ -504,52 +504,8 @@ func cmdImport(args []string) error {
 }
 
 func cmdGPUs(args []string) error {
-	fs := newFlagSet("gpus")
-	minVRAM := fs.Float64("min-vram", 0, "only pools with at least this many GB")
-	asJSON := fs.Bool("json", false, "print JSON")
-	if err := parseFlags(fs, args); err != nil {
-		return err
-	}
-	env := config.Load()
-	if err := env.RequireRunpod(); err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	gpus, err := runpod.New(env.RunpodAPIKey).ListGPUs(ctx)
-	if err != nil {
-		return err
-	}
-	pools := runpod.SummarizePools(gpus)
-	if *asJSON {
-		return writeJSON(pools)
-	}
-	heading(os.Stdout, "GPUs")
-	fmt.Fprintf(os.Stdout, "  %s  %s  %s  %s  %s\n",
-		dim(padRight("POOL", 12)),
-		dim(padRight("VRAM", 6)),
-		dim(padRight("$/HR", 6)),
-		dim(padRight("STOCK", 10)),
-		dim("EXAMPLE"),
-	)
-	for _, p := range pools {
-		if p.MemoryGB < *minVRAM {
-			continue
-		}
-		stock := p.Availability
-		stockOut := green(padRight(stock, 10))
-		if !p.InStock {
-			stockOut = yellow(padRight("NONE", 10))
-		}
-		fmt.Fprintf(os.Stdout, "  %s  %s  %s  %s  %s\n",
-			bold(padRight(p.ID, 12)),
-			padRight(fmt.Sprintf("%.0f", p.MemoryGB), 6),
-			padRight(fmt.Sprintf("%.2f", p.PricePerHour), 6),
-			stockOut,
-			dim(p.ExampleGPU),
-		)
-	}
-	return nil
+	// Deprecated alias — kept for any external callers; routes to gpu list.
+	return cmdGPUList(args)
 }
 
 func itoaPtr(p *int) string {

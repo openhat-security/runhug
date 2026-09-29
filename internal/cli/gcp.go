@@ -110,7 +110,7 @@ func cmdGCPDeploy(args []string) error {
 	project := fs.String("project", "", "GCP project id (no hardcoded default)")
 	zone := fs.String("zone", "", "GCE zone")
 	region := fs.String("region", "", "GCE region")
-	gpu := fs.String("gpu", "", "L4 (default) or T4")
+	gpu := fs.String("gpu", "", "L4 (default) or T4; default: gpu preference if gcp")
 	idle := fs.Int("idle-timeout", 600, "seconds before stop-on-idle")
 	keepUpFlag := fs.Bool("keep-up", false, "disable stop-on-idle (bills until gcp stop)")
 	name := fs.String("name", "", "instance name")
@@ -212,9 +212,13 @@ func cmdGCPDeploy(args []string) error {
 	}
 
 	keepUp := *keepUpFlag
+	preferGPU := applySavedGCPGPU(*gpu)
+	if preferGPU != "" && strings.TrimSpace(*gpu) == "" {
+		fmt.Fprintf(os.Stderr, "%s using saved GPU preference %s\n", dim("note:"), preferGPU)
+	}
 	if !*dry && !*yes && promptOK() {
 		rate := gcp.SpotHourlyL4
-		if strings.EqualFold(strings.TrimSpace(*gpu), "T4") {
+		if strings.EqualFold(strings.TrimSpace(preferGPU), "T4") {
 			rate = gcp.SpotHourlyT4
 		}
 		warn := fmt.Sprintf("Keep Spot VM up with NO stop-on-idle? Bills ~$%.2f/hr until you run runhug gcp stop", rate)
@@ -249,7 +253,7 @@ func cmdGCPDeploy(args []string) error {
 		Name:           *name,
 		ModelID:        modelID,
 		GGUFFile:       ggufFile,
-		GPU:            *gpu,
+		GPU:            preferGPU,
 		IdleSeconds:    *idle,
 		KeepUp:         keepUp,
 		DiskGB:         *disk,

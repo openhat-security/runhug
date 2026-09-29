@@ -94,7 +94,11 @@ func cmdDeploy(args []string) error {
 	if err != nil {
 		return err
 	}
-	choice, err := runpod.Pick(gpus, est.RequiredGB, *gpu, *gpuCount)
+	preferGPU := applySavedRunpodGPU(*gpu)
+	if preferGPU != "" && strings.TrimSpace(*gpu) == "" {
+		fmt.Fprintf(os.Stderr, "%s using saved GPU preference %s\n", dim("note:"), preferGPU)
+	}
+	choice, err := runpod.Pick(gpus, est.RequiredGB, preferGPU, *gpuCount)
 	if err != nil {
 		return err
 	}
