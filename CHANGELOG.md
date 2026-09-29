@@ -19,6 +19,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-29
+
 ### Fixed
 - Homebrew cask: post-install `xattr` strip of `com.apple.quarantine` so Gatekeeper does not block unsigned darwin binaries from `brew install --cask` (until notarized).
 
