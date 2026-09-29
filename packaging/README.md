@@ -47,6 +47,21 @@ gh repo create openhat-security/packages --public --description "apt + dnf repos
 
 To re-publish npm for an existing tag: Actions → Release → Run workflow → set tag `vX.Y.Z` with **npm_only**.
 
+## Cut a release
+
+From a clean `main` (after Unreleased changelog bullets exist):
+
+```bash
+./scripts/release.sh patch            # 0.1.7 → 0.1.8
+./scripts/release.sh minor            # 0.1.7 → 0.2.0
+./scripts/release.sh major            # 0.1.7 → 1.0.0
+./scripts/release.sh patch --dry-run
+make release BUMP=patch
+```
+
+Pushing `v*` runs `.github/workflows/release.yml`. Use `--no-push` to tag locally only.
+An explicit version (`./scripts/release.sh 0.1.9`) still works if you need to override.
+
 ## Local snapshot
 
 ```bash

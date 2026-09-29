@@ -1,4 +1,4 @@
-.PHONY: help build test test-heretic tidy check build-index-packs build-release release-snapshot
+.PHONY: help build test test-heretic tidy check build-index-packs build-release release-snapshot release
 
 help:
 	@echo "build              Go binary → bin/runhug"
@@ -8,6 +8,7 @@ help:
 	@echo "build-index-packs  Category SQLite packs → dist/index (needs HF_TOKEN)"
 	@echo "build-release      Alias for release-snapshot"
 	@echo "release-snapshot   GoReleaser snapshot (or local cross-build fallback)"
+	@echo "release BUMP=patch  Cut release: bump patch|minor|major, tag, push"
 	@echo "check              tests + vet + build"
 
 build:
@@ -33,3 +34,9 @@ build-index-packs:
 
 build-release release-snapshot:
 	bash scripts/build-release.sh
+
+# Example: make release BUMP=patch
+# Extra flags: make release BUMP=minor ARGS='--dry-run'
+release:
+	@test -n "$(BUMP)" || (echo "usage: make release BUMP=patch|minor|major [ARGS='--dry-run']" >&2; exit 1)
+	bash scripts/release.sh "$(BUMP)" $(ARGS)
