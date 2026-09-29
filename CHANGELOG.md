@@ -7,6 +7,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- README: [hfpacks](https://github.com/openhat-security/hfpacks) section with steps to build Hub index packs and share them via the community Releases process.
+
 ## [0.3.1] - 2026-09-29
 
 ### Added
