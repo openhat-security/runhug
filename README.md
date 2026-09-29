@@ -87,10 +87,10 @@ runhug start opencode         # OpenCode bridge
 
 ## Build your own model index
 
-`runhug init` / `update --packs` installs the **community category index packs** we ship on [GitHub Releases](https://github.com/openhat-security/runhug/releases) (`index-*.db` + `index-manifest.json`). You can also crawl Hugging Face yourself and build a local or shared pack set with **[hfpacks](https://github.com/adamsiwiec1/hfpacks)**:
+`runhug init` / `update --packs` installs the **community category index packs** we ship on [GitHub Releases](https://github.com/openhat-security/runhug/releases) (`index-*.db` + `index-manifest.json`). You can also crawl Hugging Face yourself and build a local or shared pack set with **[hfpacks](https://github.com/openhat-security/hfpacks)**:
 
 ```bash
-git clone https://github.com/adamsiwiec1/hfpacks.git
+git clone https://github.com/openhat-security/hfpacks.git
 cd hfpacks && go build -o bin/hfpacks ./cmd/hfpacks
 ./bin/hfpacks build -out dist/index          # auto proxy pool; optional HF_TOKEN
 # or direct: ./bin/hfpacks build -no-proxy -token "$HF_TOKEN" -out dist/index
