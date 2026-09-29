@@ -1,0 +1,18 @@
+[
+  {"id":"nvidia-l4","name":"L4","hfName":"L4","series":"G2","memoryGB":24,"machineHint":"g2-standard-4","attach":"machine","spotHourlyApprox":0.35},
+  {"id":"nvidia-tesla-t4","name":"T4","hfName":"Tesla T4","series":"N1","memoryGB":16,"machineHint":"n1-standard-4","attach":"accelerator","spotHourlyApprox":0.14},
+  {"id":"nvidia-tesla-t4-vws","name":"T4 VWS","hfName":"Tesla T4","series":"N1","memoryGB":16,"machineHint":"n1-standard-4","attach":"accelerator","spotHourlyApprox":0.14},
+  {"id":"nvidia-tesla-v100","name":"V100","hfName":"Tesla V100","series":"N1","memoryGB":16,"machineHint":"n1-standard-8","attach":"accelerator","spotHourlyApprox":0.74},
+  {"id":"nvidia-tesla-p4","name":"P4","hfName":"Tesla P4","series":"N1","memoryGB":8,"machineHint":"n1-standard-4","attach":"accelerator","spotHourlyApprox":0.27},
+  {"id":"nvidia-tesla-p100","name":"P100","hfName":"Tesla P100","series":"N1","memoryGB":16,"machineHint":"n1-standard-8","attach":"accelerator","spotHourlyApprox":0.43},
+  {"id":"nvidia-tesla-a100","name":"A100 40GB","hfName":"A100 SXM4 40 GB","series":"A2","memoryGB":40,"machineHint":"a2-highgpu-1g","attach":"machine","spotHourlyApprox":1.57},
+  {"id":"nvidia-a100-80gb","name":"A100 80GB","hfName":"A100 SXM4 80 GB","series":"A2","memoryGB":80,"machineHint":"a2-ultragpu-1g","attach":"machine","spotHourlyApprox":2.90},
+  {"id":"nvidia-h100-80gb","name":"H100 80GB","hfName":"H100 SXM5 80 GB","series":"A3","memoryGB":80,"machineHint":"a3-highgpu-1g","attach":"machine","spotHourlyApprox":5.50},
+  {"id":"nvidia-h100-mega-80gb","name":"H100 Mega 80GB","hfName":"H100 SXM5 80 GB","series":"A3","memoryGB":80,"machineHint":"a3-megagpu-8g","attach":"machine","spotHourlyApprox":5.50},
+  {"id":"nvidia-h200-141gb","name":"H200 141GB","hfName":"H200 SXM 141 GB","series":"A3","memoryGB":141,"machineHint":"a3-ultragpu-8g","attach":"machine","spotHourlyApprox":8.00},
+  {"id":"nvidia-b200","name":"B200","hfName":"B200","series":"A4","memoryGB":180,"machineHint":"a4-highgpu-8g","attach":"machine","spotHourlyApprox":12.00},
+  {"id":"nvidia-gb200","name":"GB200","hfName":"B200","series":"A4X","memoryGB":192,"machineHint":"a4x","attach":"machine","spotHourlyApprox":0},
+  {"id":"nvidia-gb300","name":"GB300","hfName":"B300","series":"A4X","memoryGB":288,"machineHint":"a4x-max","attach":"machine","spotHourlyApprox":0},
+  {"id":"nvidia-rtx-pro-6000","name":"RTX PRO 6000","hfName":"RTX PRO 6000 Blackwell Server Edition","series":"G4","memoryGB":96,"machineHint":"g4-standard-48","attach":"machine","spotHourlyApprox":2.50},
+  {"id":"nvidia-l4-vws","name":"L4 VWS","hfName":"L4","series":"G2","memoryGB":24,"machineHint":"g2-standard-4","attach":"machine","spotHourlyApprox":0.35}
+]

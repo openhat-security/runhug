@@ -243,7 +243,11 @@ func cmdRecommendGPU(args []string) error {
 	}
 
 	live := loadGPUCatalog(ctx)
-	adv, err := recommend.AdviseGPU(*model, live, *gpuPool, *maxLen)
+	prefer := applySavedRunpodGPU(*gpuPool)
+	if prefer != "" && strings.TrimSpace(*gpuPool) == "" {
+		fmt.Fprintf(os.Stderr, "%s using saved GPU preference %s\n", dim("note:"), prefer)
+	}
+	adv, err := recommend.AdviseGPU(*model, live, prefer, *maxLen)
 	if err != nil {
 		return err
 	}

@@ -163,6 +163,24 @@ func (c *ReleaseClient) TryDownloadDelta(ctx context.Context, id, destPath strin
 	return true, nil
 }
 
+// FetchAssetBytes downloads a named asset from the latest release.
+// Returns (data, tag, err). Missing asset → error mentioning the name.
+func (c *ReleaseClient) FetchAssetBytes(ctx context.Context, name string) ([]byte, string, error) {
+	rel, err := c.fetchLatest(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	url, err := assetURL(rel, name)
+	if err != nil {
+		return nil, "", err
+	}
+	data, err := c.downloadBytes(ctx, url)
+	if err != nil {
+		return nil, "", err
+	}
+	return data, rel.TagName, nil
+}
+
 func assetURL(rel *ghRelease, name string) (string, error) {
 	for _, a := range rel.Assets {
 		if a.Name == name {

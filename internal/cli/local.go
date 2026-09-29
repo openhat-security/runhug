@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,10 +28,12 @@ func cmdLocal(args []string) error {
 		return cmdLocalStart(args[1:])
 	case "stop":
 		return cmdLocalStop(args[1:])
+	case "run":
+		return cmdLocalRun(args[1:])
 	case "setup", "doctor":
 		return cmdLocalSetup(args[1:])
 	default:
-		return fmt.Errorf("unknown local command %q (setup, add, start, stop)", args[0])
+		return fmt.Errorf("unknown local command %q (setup, add, start, stop, run)", args[0])
 	}
 }
 
@@ -365,4 +368,53 @@ func cmdLocalStop(args []string) error {
 	}
 	fmt.Printf("stopped pid for %s\n", m.HFRepo)
 	return nil
+}
+
+// cmdLocalRun ensures the registry model is serving, then opens the chat REPL
+// (same path as `runhug run`).
+func cmdLocalRun(args []string) error {
+	fs := newFlagSet("local run")
+	model := fs.String("model", "", "registry model (default: current / positional)")
+	port := fs.Int("port", 8081, "llama-server port when starting")
+	ctxSize := fs.Int("ctx", 4096, "context tokens (llama-server -c)")
+	threads := fs.Int("threads", 0, "CPU threads (0 = all)")
+	bin := fs.String("bin", "", "llama-server binary")
+	oneshot := fs.String("q", "", "one-shot prompt then exit")
+	stream := fs.Bool("stream", true, "stream chat completions")
+	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+	key := strings.TrimSpace(*model)
+	if key == "" && fs.NArg() > 0 {
+		key = fs.Arg(0)
+	}
+	reg, _, err := store.Load()
+	if err != nil {
+		return err
+	}
+	m, ok := reg.Lookup(key)
+	if !ok {
+		return fmt.Errorf("unknown local model %q — `runhug local add` first", key)
+	}
+	needStart := m.BaseURL == "" || (m.Runtime != runtime.Ollama && m.Runtime != runtime.MLX && m.LocalPID == 0 && m.GGUFPath != "")
+	if needStart {
+		startArgs := []string{"--model", m.HFRepo, "--port", strconv.Itoa(*port), "--ctx", strconv.Itoa(*ctxSize)}
+		if *threads > 0 {
+			startArgs = append(startArgs, "--threads", strconv.Itoa(*threads))
+		}
+		if *bin != "" {
+			startArgs = append(startArgs, "--bin", *bin)
+		}
+		if err := cmdLocalStart(startArgs); err != nil {
+			return err
+		}
+	}
+	runArgs := []string{"--yes", m.HFRepo}
+	if q := strings.TrimSpace(*oneshot); q != "" {
+		runArgs = append(runArgs, "-q", q)
+	}
+	if !*stream {
+		runArgs = append(runArgs, "--stream=false")
+	}
+	return cmdRun(runArgs)
 }

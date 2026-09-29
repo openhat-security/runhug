@@ -39,7 +39,7 @@ runhug start opencode  # Use your model with OpenCode.
 **QUEUE** OpenAI base: `https://api.runpod.ai/v2/{id}/openai/v1`  
 **Load balancer** OpenAI base: `https://{id}.api.runpod.ai/v1`
 
-Other useful commands: `inspect`, `update` / `update --packs`, `gpus`, `url`, `status`, `local add` / `local setup`, `config get|set`. Env: `RUNPOD_API_KEY`, `HF_TOKEN`, `RUNHUG_CONFIG`, `NO_COLOR`.
+Other useful commands: `inspect`, `update` / `update --packs`, `gpu list|set|clear|update`, `url`, `status`, `local add|start|stop|run|setup`, `config get|set`. Env: `RUNPOD_API_KEY`, `HF_TOKEN`, `RUNHUG_CONFIG`, `NO_COLOR`.
 
 ## Install
 

@@ -23,6 +23,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Multi-channel packaging via GoReleaser: Homebrew Cask (`openhat-security/homebrew-tap`), Scoop (`openhat-security/scoop-bucket`), `.deb`/`.rpm` (nfpm), apt + dnf repos on GitHub Pages (`openhat-security/packages`), AUR `runhug-bin` PKGBUILD, winget manifest generator, npm under `packaging/npm`.
 - Deploy-time **sampling best-practice** step (`--sampling recommended|none`, `--set key=value`): family table + quant-aware nudge (GGUF/AWQ/GPTQ) + Hub `generation_config.json`. Applied server-side on GCP llama-server; request-time via `runhug run` / Claude bridge on RunPod.
 - README / hero: deploy **any** model, including heretic/abliterated builds (`runhug heretic make`).
+- `runhug gpu list|set|clear|show` — vendored NVIDIA GPU index (Jr23xd23/gpu-database), `--filter all|local|runpod|gcp`, `--sort best|cheapest|value|vram|name`; preference wired into deploy / recommend / GCP. `gpus` aliases `gpu list`.
+- `runhug local run` — start local runtime if needed, then chat. Host GPU probe via `nvidia-smi` / Apple Silicon for `--filter local`.
+- `runhug gpu update` — refresh shipped NVIDIA + AMD + GCP catalogs into `~/.config/runhug/gpudb/` (HF index, curated GCP list, optional `gcloud` merge / GitHub Release assets `gpudb-*.json`).
 
 ### Changed
 - `assets/hero.svg`: Claude Code, OpenCode, RunPod, and GCP marks; any-model / heretic copy.

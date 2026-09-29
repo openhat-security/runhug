@@ -72,8 +72,10 @@ func Run(args []string) error {
 		return cmdDelete(rest)
 	case "status":
 		return cmdStatus(rest)
+	case "gpu":
+		return cmdGPU(rest)
 	case "gpus":
-		return cmdGPUs(rest)
+		return cmdGPUList(rest)
 	case "import":
 		return cmdImport(rest)
 	case "version", "-v", "--version":
@@ -122,8 +124,13 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  start opencode     wire opencode to the proxy/deployment")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, bold("local"))
-	fmt.Fprintln(w, "  local add          models on this machine")
-	fmt.Fprintln(w, "  local setup        set up local runtimes")
+	fmt.Fprintln(w, "  local add|start|stop|run|setup   models on this machine")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, bold("gpu"))
+	fmt.Fprintln(w, "  gpu list           hardware index + runpod/gcp/local")
+	fmt.Fprintln(w, "  gpu set|clear|show preference for deploy / local")
+	fmt.Fprintln(w, "  gpu update         refresh NVIDIA + GCP catalogs")
+	fmt.Fprintln(w, "  gpus               alias for gpu list")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, bold("config"))
 	fmt.Fprintln(w, "  config             config dir + settings")

@@ -451,7 +451,8 @@ func wizardGPU(w io.Writer, modelID string) (string, error) {
 		return "", err
 	}
 	live := loadGPUCatalog(ctx)
-	adv, err := recommend.AdviseGPU(*model, live, "", 8192)
+	prefer := applySavedRunpodGPU("")
+	adv, err := recommend.AdviseGPU(*model, live, prefer, 8192)
 	if err != nil {
 		return "", err
 	}

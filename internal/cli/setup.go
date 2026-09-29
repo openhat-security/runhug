@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/adamsiwiec1/runhug/internal/hostgpu"
 	"github.com/adamsiwiec1/runhug/internal/runtime"
 )
 
@@ -17,6 +18,7 @@ func cmdLocalSetup(args []string) error {
 	eng, err := resolveEngine(*want, *yes, true)
 	if err != nil {
 		runtime.PrintConfig(os.Stderr, runtime.Detect())
+		printLocalGPUs(os.Stderr)
 		return err
 	}
 	fmt.Printf("%s  %s  %s\n", dim("using"), eng.Kind, dim(dash(eng.Binary)))
@@ -27,7 +29,19 @@ func cmdLocalSetup(args []string) error {
 	}
 	fmt.Fprintln(os.Stderr)
 	runtime.PrintConfig(os.Stderr, runtime.Detect())
+	printLocalGPUs(os.Stderr)
 	return nil
+}
+
+func printLocalGPUs(w *os.File) {
+	devs, err := hostgpu.Detect()
+	if err != nil || len(devs) == 0 {
+		fmt.Fprintln(w, dim("gpu        (none detected — runhug gpu list --filter local)"))
+		return
+	}
+	for _, d := range devs {
+		fmt.Fprintf(w, "%s  %s  ~%.0f GB (%s)\n", dim("gpu"), d.Name, d.MemoryGB, d.Source)
+	}
 }
 
 func resolveEngine(want string, yes, printMissing bool) (runtime.Engine, error) {

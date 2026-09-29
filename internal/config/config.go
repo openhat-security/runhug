@@ -296,12 +296,21 @@ func loadStoredHFToken() string {
 	return SanitizeAPIKey(string(raw))
 }
 
+// GPUPreference is the user's saved default accelerator for deploy / local flows.
+type GPUPreference struct {
+	Provider  string  `json:"provider"` // local | runpod | gcp
+	Key       string  `json:"key"`      // pool id, L4/T4, or local matched name
+	Name      string  `json:"name,omitempty"`
+	MemoryGB  float64 `json:"memory_gb,omitempty"`
+}
+
 // Settings holds optional CLI defaults under ~/.config/runhug/settings.json.
 type Settings struct {
-	NoColor        bool   `json:"no_color"`
-	UpdateLimit    *int   `json:"update_limit,omitempty"` // Hub update row cap; 0=unlimited; nil=default
-	AdvisorBaseURL string `json:"advisor_base_url,omitempty"`
-	AdvisorModel   string `json:"advisor_model,omitempty"`
+	NoColor        bool            `json:"no_color"`
+	UpdateLimit    *int            `json:"update_limit,omitempty"` // Hub update row cap; 0=unlimited; nil=default
+	AdvisorBaseURL string          `json:"advisor_base_url,omitempty"`
+	AdvisorModel   string          `json:"advisor_model,omitempty"`
+	GPU            *GPUPreference  `json:"gpu,omitempty"`
 }
 
 func SettingsPath() (string, error) {
