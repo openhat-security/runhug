@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -41,13 +42,27 @@ func cmdGPU(args []string) error {
 }
 
 func printGPUUsage() {
-	fmt.Fprintln(os.Stdout, "usage:")
-	fmt.Fprintln(os.Stdout, "  runhug gpu list [--filter all|local|amd|nvidia|runpod|gcp] [--sort best|cheapest|value|vram|name] [--query Q]")
-	fmt.Fprintln(os.Stdout, "  runhug gpu set [NAME|POOL|L4|T4] [--filter …]")
-	fmt.Fprintln(os.Stdout, "  runhug gpu clear")
-	fmt.Fprintln(os.Stdout, "  runhug gpu show")
-	fmt.Fprintln(os.Stdout, "  runhug gpu update [--nvidia|--amd|--gcp]   refresh catalogs (like `runhug update` for models)")
-	fmt.Fprintln(os.Stdout, "  runhug gpus …          alias for gpu list")
+	printGPUHelp(os.Stdout)
+}
+
+func printGPUHelp(w io.Writer) {
+	helpUsage(w, "runhug gpu <command>")
+
+	helpSection(w, "commands")
+	helpCmd(w, "list", "hardware index + runpod/gcp/local")
+	helpCmd(w, "set [name]", "save preference for deploy / local")
+	helpCmd(w, "clear", "forget saved preference")
+	helpCmd(w, "show", "print saved preference")
+	helpCmd(w, "update", "refresh NVIDIA + GCP catalogs")
+	fmt.Fprintln(w)
+
+	helpSection(w, "list flags")
+	helpFlag(w, "--filter", "all|local|amd|nvidia|runpod|gcp")
+	helpFlag(w, "--sort", "best|cheapest|value|vram|name")
+	helpFlag(w, "--query -q", "substring filter")
+	fmt.Fprintln(w)
+
+	fmt.Fprintf(w, "%s %s\n", dim("alias:"), cyan("runhug gpus …"))
 }
 
 func cmdGPUUpdate(args []string) error {

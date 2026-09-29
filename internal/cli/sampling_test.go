@@ -10,7 +10,7 @@ import (
 func TestChooseSamplingYesRecommended(t *testing.T) {
 	temp := 0.6
 	rec := hparams.Sampling{Temperature: &temp, Source: "qwen3"}
-	got, err := chooseSampling(rec, "recommended", nil, true, false, false)
+	got, err := chooseSampling(rec, "recommended", nil, true, false, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +22,7 @@ func TestChooseSamplingYesRecommended(t *testing.T) {
 func TestChooseSamplingNone(t *testing.T) {
 	temp := 0.6
 	rec := hparams.Sampling{Temperature: &temp}
-	got, err := chooseSampling(rec, "none", nil, true, false, false)
+	got, err := chooseSampling(rec, "none", nil, true, false, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestChooseSamplingNone(t *testing.T) {
 func TestChooseSamplingSetOverride(t *testing.T) {
 	temp := 0.6
 	rec := hparams.Sampling{Temperature: &temp, Source: "qwen3"}
-	got, err := chooseSampling(rec, "recommended", []string{"temp=0.2"}, true, false, false)
+	got, err := chooseSampling(rec, "recommended", []string{"temp=0.2"}, true, false, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestChooseSamplingSetOverride(t *testing.T) {
 func TestChooseSamplingDryJSON(t *testing.T) {
 	temp := 0.7
 	rec := hparams.Sampling{Temperature: &temp}
-	got, err := chooseSampling(rec, "", nil, false, true, true)
+	got, err := chooseSampling(rec, "", nil, false, true, true, false)
 	if err != nil || got == nil {
 		t.Fatalf("%v %+v", err, got)
 	}

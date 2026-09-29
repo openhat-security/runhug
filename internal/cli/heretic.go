@@ -45,44 +45,37 @@ func cmdHeretic(args []string) error {
 }
 
 func hereticHelp() error {
-	fmt.Fprintln(os.Stdout, hereticHelpText())
+	printHereticHelp(os.Stdout)
 	return nil
 }
 
+func printHereticHelp(w io.Writer) {
+	helpUsage(w, "runhug heretic <command>")
+	fmt.Fprintln(w, dim("Abliteration training pod on RunPod · live dashboard · optional HF upload"))
+	fmt.Fprintln(w)
+
+	helpSection(w, "commands")
+	helpCmd(w, "make <model>", "create training pod + follow progress")
+	helpCmd(w, "train", "alias for make")
+	helpCmd(w, "logs <model>", "tail training log")
+	helpCmd(w, "status [model]", "pod status + dashboard link")
+	helpCmd(w, "stop <model>", "terminate pod")
+	fmt.Fprintln(w)
+
+	helpSection(w, "make flags")
+	helpFlag(w, "--gpu --gpu-count", "pool / GPU count (auto-sized)")
+	helpFlag(w, "--trials --disk", "heretic trials / container disk")
+	helpFlag(w, "--no-upload", "keep weights on pod (skip HF)")
+	helpFlag(w, "--yes --dry-run --json", "confirm / plan-only / JSON")
+	fmt.Fprintln(w)
+
+	fmt.Fprintf(w, "%s %s\n", dim("pass-through:"), cyan("runhug heretic make <m> -- --seed 1337"))
+}
+
 func hereticHelpText() string {
-	return `usage: runhug heretic <command>
-
-Train a "heretic" (abliteration) model on a RunPod GPU pod. The pod runs a
-dashboard container; runhug prints live trial progress (refusals / KL) as it
-trains and uploads the result to your Hugging Face account when done.
-
-commands:
-  make <org/model>   create a training pod, then follow progress
-  train              alias for make
-  logs <model>       tail the training log from the dashboard
-  stop <model>       terminate the pod and drop the registry entry
-  status [model]     pod status and dashboard link
-
-flags for make:
-  --gpu <pool>        pool id (default: sized from the repo)
-  --gpu-count <n>     GPUs (default: 1, possibly sized up)
-  --trials <n>        heretic trials (default 200)
-  --disk <gb>         container disk (default: repo-implied + 50 GB)
-  --cloud <SECURE|COMMUNITY>   pod cloud (default SECURE)
-  --keep-alive <min>  stay up this long after training (default 30)
-  --max-min <min>     hard stop if training exceeds this (default 720)
-  --no-upload         save /output inside the pod only (skips HF upload)
-  --upload-repo-id <org/repo>   target repo; default <hf-user>/heretic-<model>
-  --private           create the upload repo private on Hugging Face
-  --image <img>       pod image (default runhug-heretic)
-  --registry-user <user>  username for a private --image (ghcr.io: your GitHub name)
-  --registry-token <token>  token for a private --image; stored as a RunPod registry credential (env RUNHUG_REGISTRY_TOKEN)
-  --name <n>          pod name
-  --yes, --dry-run, --json, --no-follow, --heretic-arg <k=v> (repeatable)
-
-Trailing positional args after -- are passed through to heretic, e.g.
-` + "`runhug heretic make Qwen/Qwen2.5-14B-Instruct -- --seed 1337 --max-memory \"cuda:0=>20GB\"`" + `.
-`
+	var b strings.Builder
+	printHereticHelp(&b)
+	return b.String()
 }
 
 func cmdHereticMake(args []string) error {
@@ -258,7 +251,7 @@ func cmdHereticMake(args []string) error {
 		if *asJSON {
 			return writeJSON(map[string]any{"pod": req, "choice": choice, "estimate": est})
 		}
-		fmt.Println(dim("dry-run: nothing created"))
+		fmt.Println(green("✓") + " " + dim("dry-run: nothing created"))
 		return nil
 	}
 	if !*yes {
@@ -372,24 +365,27 @@ func hereticSlug(modelID string) string {
 }
 
 func printHereticPlan(modelID string, format hf.Format, est sizing.Estimate, c runpod.Choice, hourly float64, req runpod.CreatePodRequest, action, uploadRepoID string, trials int, hasHF bool) {
-	heading(os.Stdout, "Heretic plan")
+	planHeading(os.Stdout, "Heretic plan")
 	printKV(os.Stdout, "model", bold(modelID))
-	fmt.Fprintf(os.Stdout, "  %s  %s", dim(padRight("format", 9)), format.Engine)
+	fmt.Fprintf(os.Stdout, "  %s  %s", dim(padRight("format", 9)), cyan(string(format.Engine)))
 	if format.Quant != "" {
-		fmt.Fprintf(os.Stdout, " (%s)", format.Quant)
+		fmt.Fprintf(os.Stdout, " (%s)", yellow(format.Quant))
 	}
 	fmt.Println()
 	if est.WeightGB > 0 {
-		printKV(os.Stdout, "weights", fmt.Sprintf("%.1f GB → %.1f GB on a %.0f GB card", est.WeightGB, est.RequiredGB, c.Pool.MemoryGB))
+		printKV(os.Stdout, "weights", fmt.Sprintf("%s → %s on a %.0f GB card",
+			cyan(fmt.Sprintf("%.1f GB", est.WeightGB)),
+			bold(fmt.Sprintf("%.1f GB", est.RequiredGB)), c.Pool.MemoryGB))
 	}
 	gpuID := c.GPUTypeID
 	if gpuID == "" {
 		gpuID = c.Pool.ID
 	}
-	printKV(os.Stdout, "gpu", fmt.Sprintf("%s ×%d  %s  ~$%.2f/hr pod  stock %s",
-		gpuID, c.GPUCount, c.Pool.ExampleGPU, hourly, c.Pool.Availability))
-	printKV(os.Stdout, "why", c.Reason)
-	printKV(os.Stdout, "trials", fmt.Sprintf("%d", trials))
+	printKV(os.Stdout, "gpu", fmt.Sprintf("%s ×%d  %s  %s/hr pod  stock %s",
+		cyan(gpuID), c.GPUCount, c.Pool.ExampleGPU,
+		green(fmt.Sprintf("~$%.2f", hourly)), stockLabel(c.Pool.Availability)))
+	printKV(os.Stdout, "why", dim(c.Reason))
+	printKV(os.Stdout, "trials", bold(fmt.Sprintf("%d", trials)))
 	if action == "upload" {
 		if uploadRepoID != "" {
 			printKV(os.Stdout, "upload", cyan(uploadRepoID))
@@ -397,9 +393,10 @@ func printHereticPlan(modelID string, format hf.Format, est sizing.Estimate, c r
 	} else {
 		printKV(os.Stdout, "upload", yellow("off — model stays on pod disk (ephemeral!)"))
 	}
-	printKV(os.Stdout, "cloud", req.Cloud)
-	fmt.Fprintf(os.Stdout, "  %s  %s\n", dim(padRight("image", 9)), req.Image)
-	fmt.Fprintf(os.Stdout, "  %s  %d GB\n", dim(padRight("disk", 9)), req.Disk)
+	printKV(os.Stdout, "cloud", cyan(req.Cloud))
+	printKV(os.Stdout, "image", dim(req.Image))
+	printKV(os.Stdout, "disk", fmt.Sprintf("%d GB", req.Disk))
+	printKV(os.Stdout, "cost", highlightUSD(fmt.Sprintf("~%s/hr while the pod runs (billed until stop)", formatUSDPlain(hourly))))
 	keys := make([]string, 0, len(req.Env))
 	for k := range req.Env {
 		if k == "HF_TOKEN" || k == "RUNHUH_TOKEN" {
@@ -407,11 +404,18 @@ func printHereticPlan(modelID string, format hf.Format, est sizing.Estimate, c r
 		}
 		keys = append(keys, k+"="+req.Env[k])
 	}
-	printKV(os.Stdout, "env", strings.Join(keys, "  "))
+	printKV(os.Stdout, "env", dim(strings.Join(keys, "  ")))
 	if hasHF {
-		printKV(os.Stdout, "hf_token", "set (not printed)")
+		printKV(os.Stdout, "hf_token", green("set (not printed)"))
 	}
 	fmt.Fprintln(os.Stdout)
+}
+
+func formatUSDPlain(v float64) string {
+	if v < 0.01 && v > 0 {
+		return fmt.Sprintf("$%.4f", v)
+	}
+	return fmt.Sprintf("$%.2f", v)
 }
 
 func followHeretic(ctx context.Context, rp *runpod.Client, podID, modelID, dashboard, action, uploadRepoID, dashToken string) error {

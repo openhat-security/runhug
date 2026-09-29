@@ -199,11 +199,12 @@ func (c ServerlessCost) CompactLine() string {
 }
 
 // FormatBlock returns a multi-line approximate cost block (no trailing newline).
-func (c ServerlessCost) FormatBlock(poolID string) string {
+// When verbose is false, omits assumptions and flashboot notes (pass --verbose for those).
+func (c ServerlessCost) FormatBlock(poolID string, verbose bool) string {
 	var b strings.Builder
-	title := "Cost estimate (approximate — not a Runpod quote)"
+	title := "Cost estimate"
 	if poolID != "" {
-		title = fmt.Sprintf("Cost estimate for %s (approximate — not a Runpod quote)", poolID)
+		title = fmt.Sprintf("Cost estimate · %s", poolID)
 	}
 	b.WriteString(title)
 	b.WriteByte('\n')
@@ -217,14 +218,14 @@ func (c ServerlessCost) FormatBlock(poolID string) string {
 		wlabel = fmt.Sprintf("~%.1f GB weights", c.WeightGB)
 	}
 	b.WriteString(fmt.Sprintf("  est. cold start  %s  (%s)\n", formatSecRange(c.ColdStartSecMin, c.ColdStartSecMax), wlabel))
-	if c.FlashbootNote != "" {
+	if verbose && c.FlashbootNote != "" {
 		b.WriteString("  flashboot        may shorten repeat cold starts when snapshot is warm\n")
 	}
 	b.WriteString(fmt.Sprintf("  est. $/cold req  %s\n", formatUSDRange(c.ColdRequestUSDMin, c.ColdRequestUSDMax)))
 	b.WriteString(fmt.Sprintf("  est. $/warm req  %s\n", formatUSDRange(c.WarmRequestUSDMin, c.WarmRequestUSDMax)))
-	b.WriteString(fmt.Sprintf("  idle linger      ~%ds after last req ≈ %s (then scale-to-zero if min=0)\n",
+	b.WriteString(fmt.Sprintf("  idle linger      ~%ds after last req ≈ %s\n",
 		c.IdleTimeoutSec, formatUSD(c.IdleHoldUSD)))
-	b.WriteString("  daily scenarios  (midpoints; + idle linger per cold start)\n")
+	b.WriteString("  daily scenarios\n")
 	for _, n := range []int{10, 100, 1000} {
 		allWarm := c.DailyScenarioUSD(n, 0)
 		mixed := c.DailyScenarioUSD(n, 0.10)
@@ -232,9 +233,11 @@ func (c ServerlessCost) FormatBlock(poolID string) string {
 		b.WriteString(fmt.Sprintf("    %4d req/day   all-warm ≈ %s · 10%% cold ≈ %s · all-cold ≈ %s\n",
 			n, formatUSD(allWarm), formatUSD(mixed), formatUSD(allCold)))
 	}
-	b.WriteString("  assumptions\n")
-	for _, a := range c.Assumptions {
-		b.WriteString("    · " + a + "\n")
+	if verbose && len(c.Assumptions) > 0 {
+		b.WriteString("  assumptions\n")
+		for _, a := range c.Assumptions {
+			b.WriteString("    · " + a + "\n")
+		}
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

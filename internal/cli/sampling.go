@@ -26,7 +26,7 @@ func loadRecommendSampling(ctx context.Context, client *hf.Client, model hf.Mode
 // chooseSampling is the deploy-time final step: none / recommended / customize.
 // --yes and non-TTY default to recommended. --dry-run prints the block and returns rec
 // unless mode is none.
-func chooseSampling(rec hparams.Sampling, mode string, sets []string, yes, dry, jsonOut bool) (*hparams.Sampling, error) {
+func chooseSampling(rec hparams.Sampling, mode string, sets []string, yes, dry, jsonOut, verbose bool) (*hparams.Sampling, error) {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	if mode == "" {
 		mode = "recommended"
@@ -42,9 +42,11 @@ func chooseSampling(rec hparams.Sampling, mode string, sets []string, yes, dry, 
 	}
 
 	fmt.Fprintln(os.Stdout)
-	heading(os.Stdout, "Sampling (best-practice)")
-	printKV(os.Stdout, "recommended", rec.FormatBlock())
-	fmt.Fprintln(os.Stdout, dim("  R recommended   s none (engine defaults)   c customize key=value"))
+	planHeading(os.Stdout, "Sampling")
+	printKV(os.Stdout, "recommended", highlightUSD(rec.FormatBlock()))
+	if verbose || (!dry && !jsonOut && canPrompt() && !yes) {
+		fmt.Fprintln(os.Stdout, dim("  R recommended   s none (engine defaults)   c customize key=value"))
+	}
 
 	if jsonOut || dry {
 		if mode == "none" || mode == "skip" {

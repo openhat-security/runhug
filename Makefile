@@ -1,4 +1,4 @@
-.PHONY: help build test test-heretic tidy check build-index-packs build-release release-snapshot release
+.PHONY: help build test test-heretic tidy check build-index-packs build-release release-snapshot release demo-vhs
 
 help:
 	@echo "build              Go binary → bin/runhug"
@@ -9,6 +9,7 @@ help:
 	@echo "build-release      Alias for release-snapshot"
 	@echo "release-snapshot   GoReleaser snapshot (or local cross-build fallback)"
 	@echo "release BUMP=patch  Cut release: bump patch|minor|major, tag, push"
+	@echo "demo-vhs           Record demo GIF+MP4 via charmbracelet/vhs"
 	@echo "check              tests + vet + build"
 
 build:
@@ -34,6 +35,12 @@ build-index-packs:
 
 build-release release-snapshot:
 	bash scripts/build-release.sh
+
+# Record assets/screenshots/runhug-demo.{gif,mp4} (needs: brew install vhs).
+demo-vhs: build
+	@command -v vhs >/dev/null || (echo "install vhs: brew install vhs" >&2; exit 1)
+	mkdir -p assets/screenshots
+	vhs demos/runhug.tape
 
 # Example: make release BUMP=patch
 # Extra flags: make release BUMP=minor ARGS='--dry-run'

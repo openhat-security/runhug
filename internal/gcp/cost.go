@@ -99,21 +99,24 @@ func (c SpotCost) CompactLine() string {
 }
 
 // FormatBlock returns a multi-line approximate cost block.
-func (c SpotCost) FormatBlock() string {
+// When verbose is false, omits the assumptions list (pass --verbose for those).
+func (c SpotCost) FormatBlock(verbose bool) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Cost estimate for Spot %s (%s) — approximate, not a Google quote\n", c.GPU, c.MachineType))
+	b.WriteString(fmt.Sprintf("Cost estimate · Spot %s (%s)\n", c.GPU, c.MachineType))
 	b.WriteString(fmt.Sprintf("  $/hr while up     %s\n", formatUSD(c.HourlyUSD)))
-	b.WriteString(fmt.Sprintf("  est. cold start  ~%d–%d min (first boot: docker + image + GGUF)\n", c.ColdStartMinM, c.ColdStartMaxM))
+	b.WriteString(fmt.Sprintf("  est. cold start  ~%d–%d min (first boot)\n", c.ColdStartMinM, c.ColdStartMaxM))
 	if c.KeepUp {
-		b.WriteString("  stop-on-idle     OFF (keep-up) — bills until runhug gcp stop\n")
+		b.WriteString("  stop-on-idle     OFF (keep-up)\n")
 		b.WriteString(fmt.Sprintf("  if left 8h       ≈ %s\n", formatUSD(c.Day8hUSD)))
 	} else {
-		b.WriteString(fmt.Sprintf("  idle then stop   ~%ds after last client ≈ %s (disk kept)\n", c.IdleSeconds, formatUSD(c.IdleHoldUSD)))
-		b.WriteString(fmt.Sprintf("  if left 8h       ≈ %s (only if keep-up / no idle stop)\n", formatUSD(c.Day8hUSD)))
+		b.WriteString(fmt.Sprintf("  idle then stop   ~%ds ≈ %s (disk kept)\n", c.IdleSeconds, formatUSD(c.IdleHoldUSD)))
+		b.WriteString(fmt.Sprintf("  if left 8h       ≈ %s (keep-up only)\n", formatUSD(c.Day8hUSD)))
 	}
-	b.WriteString("  assumptions\n")
-	for _, a := range c.Assumptions {
-		b.WriteString("    · " + a + "\n")
+	if verbose && len(c.Assumptions) > 0 {
+		b.WriteString("  assumptions\n")
+		for _, a := range c.Assumptions {
+			b.WriteString("    · " + a + "\n")
+		}
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

@@ -39,15 +39,15 @@ func TestGCPDockerfileCommand(t *testing.T) {
 }
 
 func TestGCPHelpMentionsPush(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
 	s := gcpHelpText()
-	if !strings.Contains(s, "push") {
-		t.Fatal("gcp help should mention push")
+	for _, want := range []string{"push", "dockerfile", "deploy", "--image", "--estimate", "tunnel"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("gcp help missing %q:\n%s", want, s)
+		}
 	}
-	if !strings.Contains(s, "pull + start") && !strings.Contains(s, "docker-pulls") {
-		t.Fatal("gcp help should mention docker pull cold start")
-	}
-	if !strings.Contains(s, "no Cloud Build") {
-		t.Fatal("gcp help should mention no Cloud Build")
+	if strings.Contains(s, "soft locks") || strings.Contains(s, "Phase 1") {
+		t.Fatalf("gcp help should stay short:\n%s", s)
 	}
 }
 

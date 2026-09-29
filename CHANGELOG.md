@@ -5,6 +5,21 @@ All notable user-facing changes to runhug are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `demos/runhug.tape` — [charmbracelet/vhs](https://github.com/charmbracelet/vhs) recording of the dry-run tour (`make demo-vhs` → `assets/screenshots/runhug-demo.{gif,mp4}`).
+
+### Changed
+- Root `help`: yellow section headers, cyan command names, dim descriptions (aligned columns); clearer tagline colors.
+- Plan / cost / heretic / GCP dry-run output: yellow section titles, green `$` amounts, stock color (high/med/low).
+- Cost **assumptions** and other detail (env dump, gcloud argv, Dockerfile on dry-run) only with `--verbose` / `-v`.
+- `runhug gcp dockerfile` opens Dockerfile + entrypoint in a read-only viewer (`vim -R`, else `less`) when TTY; `--stdout` or `--out <dir>` for scripts.
+- README: single install codeblock (commented per OS/channel); tips for `--verbose`, colorized help, `gcp dockerfile` pager; embed dry-run demo GIF.
+
+### Removed
+- `cmd/runhug-demo` (saschagrunert/demo interactive tour) — use `make demo-vhs` instead.
+
 ## [0.2.2] - 2026-09-29
 
 ### Fixed

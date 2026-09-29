@@ -203,6 +203,8 @@ func cmdRecommendGPU(args []string) error {
 	maxLen := fs.Int("max-len", 8192, "context length for VRAM estimate")
 	estimate := fs.Bool("estimate", false, "print full approximate cost block (cold/warm/daily scenarios)")
 	fs.BoolVar(estimate, "e", false, "alias for --estimate")
+	verbose := fs.Bool("verbose", false, "include cost assumptions and extra detail")
+	fs.BoolVar(verbose, "v", false, "alias for --verbose")
 	asJSON := fs.Bool("json", false, "print JSON")
 	if err := parseFlags(fs, args); err != nil {
 		return err
@@ -267,11 +269,13 @@ func cmdRecommendGPU(args []string) error {
 		printKV(os.Stdout, "vram", fmt.Sprintf("~%.1f GB required (estimate)", adv.RequiredGB))
 	}
 	printKV(os.Stdout, "gpu", adv.Text)
-	printKV(os.Stdout, "why", adv.Choice.Reason)
+	if *verbose {
+		printKV(os.Stdout, "why", adv.Choice.Reason)
+	}
 	fmt.Fprintln(os.Stdout)
 	if *estimate {
 		cost := sizing.EstimateServerlessCost(adv.Choice.HourlyUSD, adv.WeightGB, adv.Choice.GPUCount, 5, true)
-		fmt.Fprintln(os.Stdout, bold(cost.FormatBlock(adv.Choice.Pool.ID)))
+		printCostBlock(os.Stdout, cost.FormatBlock(adv.Choice.Pool.ID, *verbose))
 		fmt.Fprintln(os.Stdout)
 	}
 	// Also list a few larger/safer alternatives when live/offline catalog is available.
@@ -281,7 +285,11 @@ func cmdRecommendGPU(args []string) error {
 	}
 	opts := runpod.FittingOptions(catalog, adv.RequiredGB, 5)
 	if len(opts) > 1 {
-		fmt.Fprintln(os.Stdout, bold("Other fitting pools")+"  "+dim("pass --estimate / -e for full cost scenarios"))
+		title := bold("Other fitting pools")
+		if *verbose {
+			title += "  " + dim("pass --estimate / -e for full cost scenarios")
+		}
+		fmt.Fprintln(os.Stdout, title)
 		for i, pool := range opts {
 			tag := ""
 			if i == 0 {

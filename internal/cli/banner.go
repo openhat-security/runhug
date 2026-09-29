@@ -40,7 +40,9 @@ func printBanner(w io.Writer) {
 }
 
 func printTagline(w io.Writer) {
-	fmt.Fprintf(w, "%s %s — find the best Hugging Face model, deploy it in minutes, run it for pennies.\n",
-		bold(version.Name), version.Version)
+	fmt.Fprintf(w, "%s %s — %s\n",
+		boldCyan(version.Name),
+		yellow(version.Version),
+		dim("find the best Hugging Face model, deploy it in minutes, run it for pennies."))
 	fmt.Fprintln(w)
 }

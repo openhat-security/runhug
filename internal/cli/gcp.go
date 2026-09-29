@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,7 +20,7 @@ import (
 
 func cmdGCP(args []string) error {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stdout, gcpHelpText())
+		printGCPHelp(os.Stdout)
 		return nil
 	}
 	switch args[0] {
@@ -40,65 +41,45 @@ func cmdGCP(args []string) error {
 	case "opencode":
 		return cmdGCPOpenCode(args[1:])
 	case "-h", "--help", "help":
-		fmt.Fprintln(os.Stdout, gcpHelpText())
+		printGCPHelp(os.Stdout)
 		return nil
 	default:
-		return fmt.Errorf("unknown gcp command %q\n\n%s", args[0], gcpHelpText())
+		printGCPHelp(os.Stderr)
+		return fmt.Errorf("unknown gcp command %q", args[0])
 	}
 }
 
+func printGCPHelp(w io.Writer) {
+	helpUsage(w, "runhug gcp <command>")
+	fmt.Fprintln(w, dim("Spot L4/T4 · llama.cpp · stop-on-idle · SSH tunnel → 127.0.0.1:8080/v1"))
+	fmt.Fprintln(w)
+
+	helpSection(w, "commands")
+	helpCmd(w, "deploy [model]", "create Spot VM (needs --image)")
+	helpCmd(w, "tunnel [name]", "SSH local-forward to /v1")
+	helpCmd(w, "status|stop|delete", "instance lifecycle")
+	helpCmd(w, "dockerfile", "view Dockerfile + entrypoint (pager)")
+	helpCmd(w, "push", "local docker build + push to AR")
+	helpCmd(w, "opencode", "merge .opencode/opencode.json")
+	fmt.Fprintln(w)
+
+	helpSection(w, "deploy flags")
+	helpFlag(w, "--project --zone --gpu", "GCP project / zone / L4|T4")
+	helpFlag(w, "--image <ref>", "prebuilt AR/GCR image (required live)")
+	helpFlag(w, "--idle-timeout --keep-up", "stop-on-idle (default 600s)")
+	helpFlag(w, "--estimate -e", "full Spot cost block")
+	helpFlag(w, "--verbose -v", "assumptions + extra detail")
+	helpFlag(w, "--yes --dry-run --json", "confirm / plan-only / JSON")
+	fmt.Fprintln(w)
+
+	fmt.Fprintf(w, "%s %s\n", dim("also:"), cyan("runhug deploy --provider gcp <model>"))
+}
+
+// gcpHelpText is kept for tests that assert on the rendered help string.
 func gcpHelpText() string {
-	return `usage: runhug gcp <command>
-
-Phase 1 GCP GPU provider (Spot L4, T4 fallback) serving llama.cpp llama-server
-via a Spot DLVM that docker-pulls a prebuilt image (cold start = pull + start).
-Auth is gcloud Application Default Credentials. OpenAI /v1 binds 127.0.0.1 on the
-VM; reach it with an SSH local-forward tunnel (runhug gcp tunnel). Bearer is CLI-managed (never baked into the image).
-
-Default network is no public IP: image pull / HF download need Cloud NAT (or
-pass --public-ip for dogfood only). Always lead with stop-on-idle (default 600s).
-
-commands:
-  deploy [org/model]   pick project + GGUF model, create Spot container VM + stop-on-idle
-  tunnel [name]        SSH local-forward → http://127.0.0.1:8080/v1 (guest binds loopback)
-  status [name]        instance status
-  stop [name]          stop the VM (preserves disk)
-  delete [name]        delete the VM + registry entry
-  dockerfile           print generated Dockerfile + entrypoint (stdout)
-  push                 local docker build --platform linux/amd64 + push to AR (no Cloud Build)
-  opencode             emit/merge project .opencode/opencode.json (no apiKey)
-
-Also: runhug deploy --provider gcp <model>
-
-flags for deploy:
-  --project <id>       GCP project (required unless interactive pick / gcloud default)
-  --zone <zone>        default us-central1-a
-  --region <region>    used when --zone omitted
-  --gpu L4|T4          default L4 (T4 auto-fallback on create failure)
-  --idle-timeout <sec> stop-on-idle seconds (default 600; ignored with --keep-up)
-  --keep-up            disable stop-on-idle (bills until runhug gcp stop); prompts y/N unless --yes
-  --name <instance>    GCE instance name
-  --gguf <file>        preferred .gguf filename in the repo
-  --disk <gb>          boot disk (default 200)
-  --image <ref>        prebuilt container image (Artifact Registry / GCR); required for live create
-  --public-ip          dogfood: ephemeral external IP (default is no-address + Cloud NAT)
-  --write-image <dir>  write Dockerfile + entrypoint.sh
-  --opencode           merge project .opencode/opencode.json (apiKey env ref only)
-	--estimate, -e       always print full cost block (also shown on dry-run / create)
-  --sampling <mode>    recommended (default), none, or customize
-  --set key=value      sampling override (repeatable)
-  --yes, --dry-run, --json
-
-flags for push:
-  --image <ref>        destination tag (required), e.g. REGION-docker.pkg.dev/PROJECT/runhug/llama-server:cuda
-  --model <org/model>  optional MODEL_ID hint baked as ENV (not a secret)
-  --gguf <file>        optional GGUF filename hint
-  --dir <path>         write/build context (default: temp dir)
-  --platform <plat>    default linux/amd64
-  --dry-run            print docker build/push commands only
-
-soft locks: gcloud ADC · Bearer + 127.0.0.1 + SSH tunnel · stop-on-idle (unless keep-up) · OpenCode env apiKey only
-`
+	var b strings.Builder
+	printGCPHelp(&b)
+	return b.String()
 }
 
 func cmdGCPDeploy(args []string) error {
@@ -124,6 +105,8 @@ func cmdGCPDeploy(args []string) error {
 	publicIP := fs.Bool("public-ip", false, "dogfood: ephemeral external IP (default no-address + Cloud NAT)")
 	estimate := fs.Bool("estimate", false, "print full cost block")
 	fs.BoolVar(estimate, "e", false, "alias for --estimate")
+	verbose := fs.Bool("verbose", false, "include assumptions, gcloud argv, Dockerfile dump")
+	fs.BoolVar(verbose, "v", false, "alias for --verbose")
 	samplingMode := fs.String("sampling", "recommended", "recommended, none, or customize (with --set)")
 	var setFlag stringsFlag
 	fs.Var(&setFlag, "set", "sampling KEY=VALUE (repeatable)")
@@ -271,7 +254,7 @@ func cmdGCPDeploy(args []string) error {
 	var chosen *hparams.Sampling
 	if model != nil {
 		rec := loadRecommendSampling(hctx, hfClient, *model, format)
-		chosen, err = chooseSampling(rec, *samplingMode, setFlag, *yes, *dry, *asJSON)
+		chosen, err = chooseSampling(rec, *samplingMode, setFlag, *yes, *dry, *asJSON, *verbose)
 		if err != nil {
 			return err
 		}
@@ -287,20 +270,7 @@ func cmdGCPDeploy(args []string) error {
 		fmt.Fprintf(os.Stderr, "wrote Dockerfile + entrypoint.sh → %s\n", dir)
 	}
 
-	printGCPPlan(plan, env.HFToken != "", *estimate || *dry || !*yes)
-
-	if *dry {
-		spec := gcp.OpenCodeSpec{
-			BaseURL: gcp.LocalOpenAIURL(gcp.ServerPort),
-			ModelID: modelID,
-			Source:  "gcp ssh tunnel",
-		}
-		cfg := gcp.OpenCodeConfig(spec)
-		raw, _ := json.MarshalIndent(cfg, "", "  ")
-		fmt.Fprintln(os.Stdout)
-		heading(os.Stdout, "OpenCode (dry-run stdout, apiKey env ref only)")
-		fmt.Println(string(raw))
-	}
+	printGCPPlan(plan, env.HFToken != "", *estimate || *dry || !*yes, *verbose)
 
 	if *dry {
 		if *asJSON {
@@ -311,13 +281,26 @@ func cmdGCPDeploy(args []string) error {
 				"opencode":   gcp.OpenCodeConfig(gcp.OpenCodeSpec{BaseURL: plan.OpenAIHint, ModelID: modelID, Source: "gcp"}),
 			})
 		}
-		fmt.Fprintln(os.Stdout)
-		heading(os.Stdout, "Dockerfile")
-		fmt.Println(plan.Dockerfile)
-		fmt.Fprintln(os.Stdout)
-		heading(os.Stdout, "entrypoint.sh")
-		fmt.Println(plan.Entrypoint)
-		fmt.Println(dim("dry-run: nothing created"))
+		if *verbose {
+			spec := gcp.OpenCodeSpec{
+				BaseURL: gcp.LocalOpenAIURL(gcp.ServerPort),
+				ModelID: modelID,
+				Source:  "gcp ssh tunnel",
+			}
+			cfg := gcp.OpenCodeConfig(spec)
+			raw, _ := json.MarshalIndent(cfg, "", "  ")
+			fmt.Fprintln(os.Stdout)
+			heading(os.Stdout, "OpenCode (dry-run stdout, apiKey env ref only)")
+			fmt.Println(string(raw))
+			fmt.Fprintln(os.Stdout)
+			body := plan.Dockerfile + "\n---\n" + plan.Entrypoint
+			if err := pageText(body); err != nil {
+				return err
+			}
+		} else {
+			fmt.Fprintln(os.Stdout, dim("Image files: runhug gcp dockerfile --model "+modelID))
+		}
+		fmt.Println(green("✓") + " " + dim("dry-run: nothing created"))
 		return nil
 	}
 
@@ -472,39 +455,47 @@ func resolveGCPProject(ctx context.Context, client *gcp.Client, interactive bool
 	return line, nil
 }
 
-func printGCPPlan(plan *gcp.DeployPlan, hasHF bool, showCost bool) {
-	heading(os.Stdout, "Plan (GCP)")
-	printKV(os.Stdout, "provider", "gcp")
-	printKV(os.Stdout, "project", plan.Project)
+func printGCPPlan(plan *gcp.DeployPlan, hasHF bool, showCost, verbose bool) {
+	planHeading(os.Stdout, "Plan (GCP)")
+	printKV(os.Stdout, "provider", cyan("gcp"))
+	printKV(os.Stdout, "project", bold(plan.Project))
 	printKV(os.Stdout, "zone", plan.Zone)
-	printKV(os.Stdout, "instance", plan.Name)
+	printKV(os.Stdout, "instance", cyan(plan.Name))
 	printKV(os.Stdout, "model", bold(plan.ModelID))
 	if plan.GGUFFile != "" {
-		printKV(os.Stdout, "gguf", plan.GGUFFile)
+		printKV(os.Stdout, "gguf", cyan(plan.GGUFFile))
 	}
-	printKV(os.Stdout, "gpu", fmt.Sprintf("%s (%s) — %s", plan.Target.Name, plan.Target.MachineType, plan.Target.Reason))
-	printKV(os.Stdout, "cost", plan.Cost.CompactLine())
+	gpuLine := fmt.Sprintf("%s (%s)", cyan(plan.Target.Name), plan.Target.MachineType)
+	if verbose && plan.Target.Reason != "" {
+		gpuLine = fmt.Sprintf("%s — %s", gpuLine, dim(plan.Target.Reason))
+	}
+	printKV(os.Stdout, "gpu", gpuLine)
+	printKV(os.Stdout, "cost", highlightUSD(plan.Cost.CompactLine()))
 	if plan.KeepUp {
 		printKV(os.Stdout, "idle", yellow("keep-up — NO stop-on-idle"))
 	} else {
-		printKV(os.Stdout, "idle", fmt.Sprintf("%ds stop-on-idle", plan.IdleSeconds))
+		printKV(os.Stdout, "idle", yellow(fmt.Sprintf("%ds stop-on-idle", plan.IdleSeconds)))
 	}
 	printKV(os.Stdout, "bind", "127.0.0.1:"+strconv.Itoa(gcp.ServerPort)+" + SSH tunnel")
-	printKV(os.Stdout, "container", plan.ContainerImage)
-	net := "no-address (need Cloud NAT)"
-	if plan.PublicIP {
-		net = "ephemeral external IP (dogfood)"
+	if verbose {
+		printKV(os.Stdout, "container", dim(plan.ContainerImage))
+		net := "no-address (need Cloud NAT)"
+		if plan.PublicIP {
+			net = yellow("ephemeral external IP (dogfood)")
+		}
+		printKV(os.Stdout, "network", net)
+		printKV(os.Stdout, "auth", dim("gcloud ADC + CLI Bearer (not in image)"))
 	}
-	printKV(os.Stdout, "network", net)
-	printKV(os.Stdout, "auth", "gcloud ADC + CLI Bearer (not in image)")
 	if hasHF {
-		printKV(os.Stdout, "hf_token", "set (metadata-from-file, not printed)")
+		printKV(os.Stdout, "hf_token", green("set (metadata-from-file, not printed)"))
 	}
-	printKV(os.Stdout, "gcloud", "gcloud "+strings.Join(plan.CreateArgs, " "))
+	if verbose {
+		printKV(os.Stdout, "gcloud", dim("gcloud "+strings.Join(plan.CreateArgs, " ")))
+	}
 	if showCost {
 		fmt.Fprintln(os.Stdout)
-		fmt.Fprintln(os.Stdout, bold(plan.Cost.FormatBlock()))
-	} else {
+		printCostBlock(os.Stdout, plan.Cost.FormatBlock(verbose))
+	} else if verbose {
 		fmt.Fprintln(os.Stdout, dim("Tip: pass --estimate / -e for the full Spot cost block."))
 	}
 	fmt.Fprintln(os.Stdout)
@@ -639,7 +630,8 @@ func cmdGCPDockerfile(args []string) error {
 	model := fs.String("model", "", "optional MODEL_ID hint")
 	gguf := fs.String("gguf", "", "optional GGUF filename")
 	idle := fs.Int("idle-timeout", 600, "idle seconds")
-	outDir := fs.String("out", "", "write files to directory instead of stdout")
+	outDir := fs.String("out", "", "write files to directory instead of paging")
+	forceStdout := fs.Bool("stdout", false, "print to stdout instead of man-style pager")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -655,10 +647,12 @@ func cmdGCPDockerfile(args []string) error {
 		fmt.Fprintf(os.Stdout, "wrote %s\n", filepath.Join(dir, "entrypoint.sh"))
 		return nil
 	}
-	fmt.Println(gcp.Dockerfile(cfg))
-	fmt.Println("---")
-	fmt.Println(gcp.EntrypointScript(cfg))
-	return nil
+	body := gcp.Dockerfile(cfg) + "\n---\n" + gcp.EntrypointScript(cfg)
+	if *forceStdout {
+		fmt.Println(body)
+		return nil
+	}
+	return pageText(body)
 }
 
 func cmdGCPPush(args []string) error {

@@ -17,11 +17,17 @@ func TestEstimateSpotCostT4(t *testing.T) {
 	if c.KeepUp || c.IdleSeconds != 600 {
 		t.Fatalf("idle keepUp=%v sec=%d", c.KeepUp, c.IdleSeconds)
 	}
-	block := c.FormatBlock()
-	for _, want := range []string{"Spot T4", "$/hr", "cold start", "not a Google quote", "600s"} {
+	block := c.FormatBlock(false)
+	for _, want := range []string{"Spot T4", "$/hr", "cold start", "600s"} {
 		if !strings.Contains(block, want) {
 			t.Fatalf("block missing %q:\n%s", want, block)
 		}
+	}
+	if strings.Contains(block, "assumptions") {
+		t.Fatalf("default FormatBlock should omit assumptions:\n%s", block)
+	}
+	if !strings.Contains(c.FormatBlock(true), "assumptions") {
+		t.Fatal("verbose should include assumptions")
 	}
 }
 
@@ -31,8 +37,8 @@ func TestEstimateSpotCostKeepUp(t *testing.T) {
 	if !c.KeepUp || c.IdleSeconds != 0 {
 		t.Fatalf("keepUp=%v idle=%d", c.KeepUp, c.IdleSeconds)
 	}
-	if !strings.Contains(c.FormatBlock(), "keep-up") {
-		t.Fatal(c.FormatBlock())
+	if !strings.Contains(c.FormatBlock(false), "keep-up") {
+		t.Fatal(c.FormatBlock(false))
 	}
 	if !strings.Contains(c.CompactLine(), "keep-up") {
 		t.Fatal(c.CompactLine())

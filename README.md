@@ -6,109 +6,84 @@
 
 **Find the best model. Deploy it in minutes. Run it for pennies.**
 
-## What it does
+Search Hugging Face, deploy any checkpoint (RunPod serverless vLLM or GCP Spot llama.cpp), then chat via an OpenAI-compatible URL, Claude Code, or OpenCode — including abliterated **heretic** models trained in-CLI.
 
-1. ***Search*** Hugging Face — NLP search over the local index (or `--online` Hub). A more intelligent search than the Hub UI.
-2. ***Deploy*** **any** Hugging Face checkpoint — not only the curated set Hugging Face Inference supports. RunPod serverless vLLM (default) or GCP Spot llama.cpp. That includes uncensored / abliterated **heretic** models you can train in-CLI (`runhug heretic make <org/model>`).
-3. ***Use*** it in less than a minute. OpenAI-compatible URL, Claude Code, OpenCode. `runhug run`, or `runhug start claude` / `runhug start opencode`.
-   ***more integrations coming soon***
-
-## How to use
-
-```bash
-runhug wizard          # guided setup (no live deploy without confirm)
-runhug init --yes      # search NLP + optional index packs (index packs = more models, better search)
-runhug connect         # Configure RunPod Connection
-runhug connect hf      # Configure Hugging Face Connection
-
-runhug search -q "small instruct llm"
-runhug recommend -q "cheap chat on a small GPU"
-runhug deploy <model> --dry-run
-runhug deploy <model>                 # last step: recommended / none / customize sampling
-runhug heretic make <org/model>       # abliterate any transformers checkpoint, then deploy it
-runhug deploy --provider gcp <gguf-model> --project <id> --dry-run
-runhug gcp push --image REGION-docker.pkg.dev/PROJECT/runhug/llama-server:cuda
-runhug gcp tunnel                  
-runhug list
-runhug proxy           # local OpenAI proxy @ 127.0.0.1:8080/v1 (don't worry about changing vars when switching between endpoints, providers, models)
-runhug run [model]     # chat locally 
-runhug start claude    # Use your model with Claude Code.
-runhug start opencode  # Use your model with OpenCode. 
-```
-
-**QUEUE** OpenAI base: `https://api.runpod.ai/v2/{id}/openai/v1`  
-**Load balancer** OpenAI base: `https://{id}.api.runpod.ai/v1`
-
-Other useful commands: `inspect`, `update` / `update --packs`, `gpu list|set|clear|update`, `url`, `status`, `local add|start|stop|run|setup`, `config get|set`. Env: `RUNPOD_API_KEY`, `HF_TOKEN`, `RUNHUG_CONFIG`, `NO_COLOR`.
+<p align="center">
+  <img src="assets/screenshots/runhug-demo.gif" alt="runhug CLI dry-run tour" width="100%"/>
+</p>
 
 ## Install
 
-**Homebrew (macOS / Linux):**
-
 ```bash
+# macOS / Linux — Homebrew
 brew install --cask openhat-security/tap/runhug
-```
 
-**apt (Debian / Ubuntu):**
-
-```bash
+# Debian / Ubuntu — apt
 curl -fsSL https://openhat-security.github.io/packages/install-apt.sh | sudo bash
-```
 
-**dnf (Fedora / RHEL-ish):**
-
-```bash
+# Fedora / RHEL — dnf
 curl -fsSL https://openhat-security.github.io/packages/install-dnf.sh | sudo bash
-```
 
-**Arch (AUR):**
-
-```bash
+# Arch — AUR
 yay -S runhug-bin
-```
 
-**Scoop (Windows):**
-
-```powershell
+# Windows — Scoop
 scoop bucket add openhat https://github.com/openhat-security/scoop-bucket
 scoop install runhug
-```
 
-**winget (Windows):**
-
-```powershell
+# Windows — winget
 winget install OpenHatSecurity.Runhug
-```
 
-**npm** (Node ≥ 18):
-
-```bash
+# any OS — npm (Node ≥ 18)
 npm install -g runhug
-# or
-npx runhug wizard
-```
+# or: npx runhug wizard
 
-**Direct binary (macOS / Linux):**
-
-```bash
+# macOS / Linux — direct binary
 curl -fsSL https://raw.githubusercontent.com/openhat-security/runhug/main/scripts/install.sh | bash
-```
 
-**Direct binary (Windows PowerShell):**
-
-```powershell
+# Windows — direct binary (PowerShell)
 irm https://raw.githubusercontent.com/openhat-security/runhug/main/scripts/install.ps1 | iex
-```
 
-**Go** (optional):
-
-```bash
+# optional — Go
 go install github.com/adamsiwiec1/runhug/cmd/runhug@latest
 ```
 
-Packaging details and release secrets: [packaging/README.md](packaging/README.md). Releases: [github.com/openhat-security/runhug/releases](https://github.com/openhat-security/runhug/releases).
+Packaging details: [packaging/README.md](packaging/README.md) · Releases: [github.com/openhat-security/runhug/releases](https://github.com/openhat-security/runhug/releases)
 
-From source: `git clone … && go build -o bin/runhug ./cmd/runhug`.
+## Quick start
+
+```bash
+runhug wizard                 # guided setup
+runhug init --yes             # search NLP + index packs
+runhug connect && runhug connect hf
+
+runhug search -q "small instruct llm"
+runhug deploy <model> --dry-run --estimate
+runhug deploy <model>         # sampling: recommended / none / customize
+
+runhug heretic make <org/model> --dry-run --no-upload
+runhug deploy --provider gcp <gguf-model> --project <id> --dry-run
+runhug gcp dockerfile --model <gguf>   # readonly pager (vim -R / less)
+runhug gcp push --image REGION-docker.pkg.dev/PROJECT/runhug/llama-server:cuda
+runhug gcp tunnel
+
+runhug proxy                  # OpenAI proxy @ 127.0.0.1:8080/v1
+runhug run [model]            # chat REPL
+runhug start claude           # Claude Code bridge
+runhug start opencode         # OpenCode bridge
+```
+
+**RunPod OpenAI bases:** QUEUE `https://api.runpod.ai/v2/{id}/openai/v1` · load balancer `https://{id}.api.runpod.ai/v1`
+
+## Tips
+
+- Plans print essentials by default. Pass `--verbose` / `-v` for cost assumptions, env dumps, and Dockerfile on GCP dry-run.
+- `--estimate` / `-e` shows cold/warm/daily cost scenarios (assumptions still need `-v`).
+- `runhug help`, `runhug gcp help`, `runhug heretic help`, `runhug gpu help` — short colorized command lists.
+- Other commands: `inspect`, `recommend gpu`, `update`, `gpu list|set|clear|update`, `list`, `local …`, `config get|set`.
+- Env: `RUNPOD_API_KEY`, `HF_TOKEN`, `RUNHUG_CONFIG`, `NO_COLOR`, `PAGER`.
+
+**Record the demo GIF:** `brew install vhs && make demo-vhs` → `assets/screenshots/runhug-demo.{gif,mp4}` (`demos/runhug.tape`).
 
 ## License & contributing
 

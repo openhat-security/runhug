@@ -1,14 +1,33 @@
 package cli
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
 
-func TestPaintRespectsNoColor(t *testing.T) {
+func TestHelpCmdAlignment(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
-	if bold("hi") != "hi" || green("ok") != "ok" || cyan("url") != "url" {
-		t.Fatalf("NO_COLOR should strip codes: %q %q %q", bold("hi"), green("ok"), cyan("url"))
+	var buf bytes.Buffer
+	helpSection(&buf, "setup")
+	helpCmd(&buf, "wizard", "guided setup")
+	helpCmd(&buf, "connect hf", "save hugging face token")
+	out := buf.String()
+	if !strings.Contains(out, "setup\n") {
+		t.Fatalf("section: %q", out)
+	}
+	if !strings.Contains(out, "wizard") || !strings.Contains(out, "guided setup") {
+		t.Fatalf("row: %q", out)
+	}
+	// Command column is padded so descriptions line up.
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) < 3 {
+		t.Fatalf("want section + 2 rows, got %#v", lines)
+	}
+	i1 := strings.Index(lines[1], "guided")
+	i2 := strings.Index(lines[2], "save")
+	if i1 < 0 || i2 < 0 || i1 != i2 {
+		t.Fatalf("descriptions should align at same column: %d vs %d\n%s", i1, i2, out)
 	}
 }
 

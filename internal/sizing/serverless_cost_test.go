@@ -11,11 +11,18 @@ func TestColdStartRangeByWeight(t *testing.T) {
 		t.Fatalf("cold should cost more than warm: warm=%g–%g cold=%g–%g",
 			c.WarmRequestUSDMin, c.WarmRequestUSDMax, c.ColdRequestUSDMin, c.ColdRequestUSDMax)
 	}
-	block := c.FormatBlock("AMPERE_24")
-	for _, want := range []string{"approximate", "AMPERE_24", "cold start", "all-warm", "10% cold", "assumptions", "$/hr"} {
+	block := c.FormatBlock("AMPERE_24", false)
+	for _, want := range []string{"Cost estimate", "AMPERE_24", "cold start", "all-warm", "10% cold", "$/hr"} {
 		if !contains(block, want) {
 			t.Fatalf("missing %q in\n%s", want, block)
 		}
+	}
+	if contains(block, "assumptions") {
+		t.Fatalf("default FormatBlock should omit assumptions:\n%s", block)
+	}
+	verbose := c.FormatBlock("AMPERE_24", true)
+	if !contains(verbose, "assumptions") {
+		t.Fatalf("verbose FormatBlock should include assumptions:\n%s", verbose)
 	}
 }
 

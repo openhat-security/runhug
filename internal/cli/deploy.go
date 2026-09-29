@@ -35,6 +35,8 @@ func cmdDeploy(args []string) error {
 	dry := fs.Bool("dry-run", false, "print the plan only")
 	estimate := fs.Bool("estimate", false, "print full approximate cost block on the plan")
 	fs.BoolVar(estimate, "e", false, "alias for --estimate")
+	verbose := fs.Bool("verbose", false, "include assumptions, env dump, and other detail")
+	fs.BoolVar(verbose, "v", false, "alias for --verbose")
 	gpu := fs.String("gpu", "", "serverless GPU pool (ADA_24, AMPERE_80, …)")
 	gpuCount := fs.Int("gpu-count", 0, "GPUs per worker (default: sized)")
 	maxLen := fs.Int("max-len", 8192, "MAX_MODEL_LEN")
@@ -187,10 +189,10 @@ func cmdDeploy(args []string) error {
 		Flashboot: strings.ToUpper(*flashboot),
 	}
 
-	printPlan(modelID, format, est, choice, req, env.HFToken != "", *estimate, *dry)
+	printPlan(modelID, format, est, choice, req, env.HFToken != "", *estimate, *dry, *verbose)
 
 	rec := loadRecommendSampling(ctx, hfClient, *model, format)
-	chosen, err := chooseSampling(rec, *samplingMode, setFlag, *yes, *dry, *asJSON)
+	chosen, err := chooseSampling(rec, *samplingMode, setFlag, *yes, *dry, *asJSON, *verbose)
 	if err != nil {
 		return err
 	}
@@ -199,7 +201,7 @@ func cmdDeploy(args []string) error {
 		if *asJSON {
 			return writeJSON(map[string]any{"plan": req, "choice": choice, "estimate": est, "sampling": chosen})
 		}
-		fmt.Println(dim("dry-run: nothing created"))
+		fmt.Println(green("✓") + " " + dim("dry-run: nothing created"))
 		return nil
 	}
 	if !*yes {
@@ -301,24 +303,29 @@ func inspectGPU(ctx context.Context, apiKey string, required float64, pool strin
 	return text, c, nil
 }
 
-func printPlan(modelID string, format hf.Format, est sizing.Estimate, c runpod.Choice, req runpod.CreateEndpointRequest, hasHF bool, showEstimate, dryRun bool) {
-	heading(os.Stdout, "Plan")
+func printPlan(modelID string, format hf.Format, est sizing.Estimate, c runpod.Choice, req runpod.CreateEndpointRequest, hasHF bool, showEstimate, dryRun, verbose bool) {
+	planHeading(os.Stdout, "Plan")
 	printKV(os.Stdout, "model", bold(modelID))
-	fmt.Fprintf(os.Stdout, "  %s  %s", dim(padRight("format", 9)), format.Engine)
+	fmt.Fprintf(os.Stdout, "  %s  %s", dim(padRight("format", 9)), cyan(string(format.Engine)))
 	if format.Quant != "" {
-		fmt.Fprintf(os.Stdout, " (%s)", format.Quant)
+		fmt.Fprintf(os.Stdout, " (%s)", yellow(format.Quant))
 	}
 	fmt.Println()
-	printKV(os.Stdout, "params", fmt.Sprintf("%s (%s)", est.ParamsLabel(), dash(est.ParamsSource)))
+	printKV(os.Stdout, "params", fmt.Sprintf("%s (%s)", bold(est.ParamsLabel()), dim(dash(est.ParamsSource))))
 	if est.WeightGB > 0 {
-		printKV(os.Stdout, "vram", fmt.Sprintf("%.1f GB weights → %.1f GB with overhead", est.WeightGB, est.RequiredGB))
+		printKV(os.Stdout, "vram", fmt.Sprintf("%s → %s with overhead",
+			cyan(fmt.Sprintf("%.1f GB weights", est.WeightGB)),
+			bold(fmt.Sprintf("%.1f GB", est.RequiredGB))))
 	}
-	printKV(os.Stdout, "gpu", fmt.Sprintf("%s ×%d  %s  $%.2f/hr  stock %s",
-		c.Pool.ID, c.GPUCount, c.Pool.ExampleGPU, c.HourlyUSD, c.Pool.Availability))
-	printKV(os.Stdout, "why", c.Reason)
-	printKV(os.Stdout, "image", req.Image)
+	printKV(os.Stdout, "gpu", fmt.Sprintf("%s ×%d  %s  %s/hr  stock %s",
+		cyan(c.Pool.ID), c.GPUCount, c.Pool.ExampleGPU,
+		green(fmt.Sprintf("$%.2f", c.HourlyUSD)), stockLabel(c.Pool.Availability)))
+	if verbose {
+		printKV(os.Stdout, "why", dim(c.Reason))
+		printKV(os.Stdout, "image", dim(req.Image))
+	}
 	printKV(os.Stdout, "disk", fmt.Sprintf("%d GB", req.Disk))
-	printKV(os.Stdout, "type", req.Type)
+	printKV(os.Stdout, "type", cyan(req.Type))
 	wMin, wMax := 0, 3
 	idleSec := 5
 	if req.Workers != nil {
@@ -327,7 +334,7 @@ func printPlan(modelID string, format hf.Format, est sizing.Estimate, c runpod.C
 			idleSec = req.Workers.IdleTimeout
 		}
 	}
-	printKV(os.Stdout, "workers", fmt.Sprintf("min=%d max=%d flashboot=%s", wMin, wMax, req.Flashboot))
+	printKV(os.Stdout, "workers", fmt.Sprintf("min=%d max=%d flashboot=%s", wMin, wMax, yellow(req.Flashboot)))
 	scalingDesc := "n/a"
 	if req.Scaling != nil {
 		switch {
@@ -340,24 +347,27 @@ func printPlan(modelID string, format hf.Format, est sizing.Estimate, c runpod.C
 		}
 	}
 	printKV(os.Stdout, "scaling", scalingDesc)
-	printKV(os.Stdout, "idle", fmt.Sprintf("%ds before scale-down (workers.idleTimeout)", idleSec))
-	keys := make([]string, 0, len(req.Env))
-	for k := range req.Env {
-		if k == "HF_TOKEN" {
-			continue
+	printKV(os.Stdout, "idle", fmt.Sprintf("%s before scale-down", yellow(fmt.Sprintf("%ds", idleSec))))
+	if verbose {
+		keys := make([]string, 0, len(req.Env))
+		for k := range req.Env {
+			if k == "HF_TOKEN" {
+				continue
+			}
+			keys = append(keys, k+"="+req.Env[k])
 		}
-		keys = append(keys, k+"="+req.Env[k])
+		printKV(os.Stdout, "env", dim(strings.Join(keys, "  ")))
 	}
-	printKV(os.Stdout, "env", strings.Join(keys, "  "))
 	if hasHF {
-		printKV(os.Stdout, "hf_token", "set (not printed)")
+		printKV(os.Stdout, "hf_token", green("set (not printed)"))
 	}
 	fmt.Fprintln(os.Stdout)
 	if showEstimate {
 		fb := strings.EqualFold(req.Flashboot, "FLASHBOOT") || strings.EqualFold(req.Flashboot, "PRIORITY_FLASHBOOT")
 		cost := sizing.EstimateServerlessCost(c.HourlyUSD, est.WeightGB, c.GPUCount, idleSec, fb)
-		fmt.Fprintln(os.Stdout, bold(cost.FormatBlock(c.Pool.ID)))
-	} else if dryRun {
+		printCostBlock(os.Stdout, cost.FormatBlock(c.Pool.ID, verbose))
+		fmt.Fprintln(os.Stdout)
+	} else if dryRun && verbose {
 		fmt.Fprintln(os.Stdout, dim("Tip: pass --estimate / -e for cold/warm/daily cost scenarios."))
 	}
 }
