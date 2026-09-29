@@ -85,6 +85,19 @@ runhug start opencode         # OpenCode bridge
 
 **Record the demo GIF:** `brew install vhs && make demo-vhs` → `assets/screenshots/runhug-demo.{gif,mp4}` (`demos/runhug.tape`).
 
+## Build your own model index
+
+`runhug init` / `update --packs` installs the **community category index packs** we ship on [GitHub Releases](https://github.com/openhat-security/runhug/releases) (`index-*.db` + `index-manifest.json`). You can also crawl Hugging Face yourself and build a local or shared pack set with **[hfpacks](https://github.com/adamsiwiec1/hfpacks)**:
+
+```bash
+git clone https://github.com/adamsiwiec1/hfpacks.git
+cd hfpacks && go build -o bin/hfpacks ./cmd/hfpacks
+./bin/hfpacks build -out dist/index          # auto proxy pool; optional HF_TOKEN
+# or direct: ./bin/hfpacks build -no-proxy -token "$HF_TOKEN" -out dist/index
+```
+
+Point contributors at a PR or release asset upload if you want to improve the shared packs in runhug releases — same manifest schema, drop-in for `runhug update --packs`.
+
 ## License & contributing
 
 [LICENSE](LICENSE) · [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [CHANGELOG.md](CHANGELOG.md) · [SUPPORT.md](SUPPORT.md)
