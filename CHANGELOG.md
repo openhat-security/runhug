@@ -7,6 +7,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-29
+
 ### Added
 - `runhug inspect`: Alternatives section (same-repo lighter GGUF quants + related Hub ports/siblings), capped at 3; JSON `alternatives`; Next suggests top pick.
 
