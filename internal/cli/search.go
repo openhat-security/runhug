@@ -20,11 +20,14 @@ import (
 type searchFlagVals struct {
 	queryFlag               string
 	author, task, library   *string
+	typeFlag                *string
 	filter, license, engine *string
 	sort                    *string
 	limit                   *int
 	semanticOn, noSemantic  *bool
 	keyword, online, hub    *bool
+	indexResults            *bool
+	share                   *string // "", "true", "false" via --share / --share=false
 	verbose                 *bool
 	wrap, wordWrap, ww      *int
 }
@@ -34,7 +37,8 @@ func registerSearchFlags(fs *flag.FlagSet) *searchFlagVals {
 	fs.StringVar(&sf.queryFlag, "query", "", "search query (id, tags, card description; same as positional; wins if both set)")
 	fs.StringVar(&sf.queryFlag, "q", "", "search query (same as --query)")
 	sf.author = fs.String("author", "", "filter by Hugging Face org or user")
-	sf.task = fs.String("task", "auto", "pipeline_tag: auto (detect image/audio/… else any), any, text-generation, text-to-image, …")
+	sf.task = fs.String("task", "auto", "exact Hub pipeline_tag: auto (detect), any, text-generation, … (narrow; use --type for broad buckets)")
+	sf.typeFlag = fs.String("type", "", "broad pack type: llm, vision, image, video, audio, embeddings, gguf, … (see: runhug packs categories)")
 	sf.library = fs.String("library", "", "library filter (transformers, …)")
 	sf.filter = fs.String("filter", "", "extra tag filter (safetensors, gguf, …)")
 	sf.license = fs.String("license", "", "license filter (apache-2.0, mit, gemma, other, …)")
@@ -46,6 +50,8 @@ func registerSearchFlags(fs *flag.FlagSet) *searchFlagVals {
 	sf.keyword = fs.Bool("keyword", false, "alias for --no-semantic (lexical-only)")
 	sf.online = fs.Bool("online", false, "live Hugging Face Hub search instead of the local SQLite index (rate-limited; set HF_TOKEN)")
 	sf.hub = fs.Bool("hub", false, "alias for --online")
+	sf.indexResults = fs.Bool("index", false, "upsert the search pool into the local index / category pack (deduped by repo id)")
+	sf.share = fs.String("share", "", "after --index: open a community PR (true/false); omit to prompt on a TTY")
 	sf.verbose = fs.Bool("verbose", false, "show rank notes, source line, and ACTIONS legend (or set RUNHUG_VERBOSE=1)")
 	fs.BoolVar(sf.verbose, "v", false, "alias for --verbose")
 	sf.wrap, sf.wordWrap, sf.ww = addWrapFlags(fs)
@@ -57,6 +63,7 @@ func (sf *searchFlagVals) request(query string) searchRequest {
 		Query:           query,
 		Author:          *sf.author,
 		Task:            hf.ResolveTask(*sf.task, query),
+		Type:            strings.TrimSpace(*sf.typeFlag),
 		Library:         *sf.library,
 		Filter:          *sf.filter,
 		License:         *sf.license,
@@ -116,6 +123,15 @@ func cmdSearch(args []string) error {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "%s  %s\n", green("copied"), id)
+	}
+	if *sf.indexResults {
+		pool := meta.Pool
+		if len(pool) == 0 {
+			pool = models
+		}
+		if err := indexSearchPool(pool, meta.PackID, query, *sf.share); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -392,17 +408,22 @@ func printInspectHelp(w io.Writer) {
 func printSearchHelp(w io.Writer) {
 	helpUsage(w, "runhug search [query]")
 	fmt.Fprintln(w, dim("Local index by default · --online for live Hub"))
+	fmt.Fprintln(w, dim("--task = exact Hub pipeline_tag · --type = broad pack bucket (llm, vision, …)"))
 	fmt.Fprintln(w)
 
 	helpSection(w, "flags")
 	helpFlag(w, "--query -q", "search query (same as positional)")
 	helpFlag(w, "--online --hub", "live Hugging Face Hub search")
+	helpFlag(w, "--type", "broad type: llm, vision, image, video, audio, embeddings, gguf, …")
+	helpFlag(w, "--task", "exact pipeline_tag (auto/any/text-generation/…)")
 	helpFlag(w, "--sort", "relevance (default), likes, or downloads")
 	helpFlag(w, "--limit", "rows to show (1-100)")
-	helpFlag(w, "--author --task --engine", "filter by author / pipeline / engine")
+	helpFlag(w, "--author --engine", "filter by author / engine")
+	helpFlag(w, "--index", "upsert search pool into local index (+ pack membership)")
+	helpFlag(w, "--share", "after --index: true/false community PR (TTY prompts if omitted)")
 	helpFlag(w, "--verbose -v", "rank notes, source, ACTIONS legend")
 	helpFlag(w, "--json --copy N", "JSON output / copy row N to clipboard")
 	fmt.Fprintln(w)
 
-	fmt.Fprintf(w, "%s %s\n", dim("example:"), cyan("runhug search qwen gguf --sort likes"))
+	fmt.Fprintf(w, "%s %s\n", dim("example:"), cyan(`runhug search aero --type llm --online --index`))
 }

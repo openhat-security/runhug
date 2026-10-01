@@ -200,7 +200,7 @@ func TestApplyDeltaJSONL(t *testing.T) {
 
 func TestDefaultCategories(t *testing.T) {
 	ids := CategoryIDs()
-	want := []string{"text-generation", "text-to-image", "video", "audio", "gguf"}
+	want := []string{"text-generation", "vision", "text-to-image", "video", "audio", "embeddings", "gguf"}
 	if len(ids) != len(want) {
 		t.Fatalf("%v", ids)
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/adamsiwiec1/runhug/internal/config"
 	"github.com/adamsiwiec1/runhug/internal/hf"
 	"github.com/adamsiwiec1/runhug/internal/index"
+	"github.com/adamsiwiec1/runhug/internal/packs"
 	"github.com/adamsiwiec1/runhug/internal/runtime"
 	"github.com/adamsiwiec1/runhug/internal/semantic"
 )
@@ -16,7 +17,8 @@ import (
 type searchRequest struct {
 	Query           string
 	Author          string
-	Task            string
+	Task            string // resolved Hub pipeline_tag or any
+	Type            string // --type id/alias (broad pack bucket)
 	Library         string
 	Filter          string
 	License         string
@@ -33,6 +35,10 @@ type searchMeta struct {
 	RankSource string
 	Queries    []string
 	Notes      string
+	// Pool is the ranked result set before display trim (for --index).
+	Pool []hf.Model
+	// PackID is the canonical type id when --type was set.
+	PackID string
 }
 
 type hubSearchFn func(ctx context.Context, client *hf.Client, opts hf.SearchOpts, sortKey string, displayLimit int, wantSemantic bool) ([]hf.Model, string, error)
@@ -67,33 +73,71 @@ func searchModels(ctx context.Context, req searchRequest) ([]hf.Model, searchMet
 		req.Limit = 10
 	}
 
-	if req.Online {
-		return searchHubLive(ctx, req, sortKey)
+	pipes, filt, errMsg := packs.ResolveTypeAndTask(req.Type, req.Task)
+	if errMsg != "" {
+		return nil, searchMeta{}, fmt.Errorf("%s", errMsg)
+	}
+	packID := packs.CanonicalTypeID(req.Type)
+	if filt != "" {
+		if req.Filter == "" {
+			req.Filter = filt
+		} else if !strings.EqualFold(req.Filter, filt) {
+			// keep both via tag filter already set; Hub filter is single — prefer type filter
+			req.Filter = filt
+		}
 	}
 
-	path, source := resolveSearchIndex()
-	if path == "" {
-		return nil, searchMeta{}, errNoSearchIndex()
+	var models []hf.Model
+	var meta searchMeta
+	if req.Online {
+		models, meta, err = searchHubLive(ctx, req, sortKey, pipes)
+	} else {
+		path, source := resolveSearchIndex()
+		if path == "" {
+			return nil, searchMeta{}, errNoSearchIndex()
+		}
+		models, meta, err = searchIndexAtPath(ctx, req, sortKey, path, source, pipes, packID)
 	}
-	return searchIndexAtPath(ctx, req, sortKey, path, source)
+	if err != nil {
+		return nil, meta, err
+	}
+	meta.PackID = packID
+	meta.Pool = append([]hf.Model{}, models...)
+	if len(models) > req.Limit {
+		models = models[:req.Limit]
+	}
+	return models, meta, nil
 }
 
-func searchHubLive(ctx context.Context, req searchRequest, sortKey string) ([]hf.Model, searchMeta, error) {
+func searchHubLive(ctx context.Context, req searchRequest, sortKey string, pipes []string) ([]hf.Model, searchMeta, error) {
 	client := hf.New(config.Load().HFToken)
 	meta := searchMeta{
 		RankSource: "hub",
 		Queries:    hf.HubSearchQueries(req.Query),
 	}
-	task := hf.ResolveTask(req.Task, req.Query)
-	models, note, err := liveHubSearchFn(ctx, client, hf.SearchOpts{
+
+	base := hf.SearchOpts{
 		Query:   req.Query,
 		Author:  req.Author,
-		Task:    task,
 		Library: req.Library,
 		Filter:  req.Filter,
 		License: req.License,
 		Engine:  req.Engine,
-	}, sortKey, req.Limit, !req.DisableSemantic)
+	}
+
+	var models []hf.Model
+	var note string
+	var err error
+	if len(pipes) <= 1 {
+		task := "any"
+		if len(pipes) == 1 {
+			task = pipes[0]
+		}
+		base.Task = task
+		models, note, err = liveHubSearchFn(ctx, client, base, sortKey, searchPoolCap, !req.DisableSemantic)
+	} else {
+		models, note, err = searchHubMultiPipeline(ctx, client, base, pipes, sortKey, !req.DisableSemantic)
+	}
 	if err != nil {
 		return nil, meta, err
 	}
@@ -113,7 +157,52 @@ func searchHubLive(ctx context.Context, req searchRequest, sortKey string) ([]hf
 	return models, meta, nil
 }
 
-func searchIndexAtPath(ctx context.Context, req searchRequest, sortKey string, path string, source string) ([]hf.Model, searchMeta, error) {
+func searchHubMultiPipeline(ctx context.Context, client *hf.Client, base hf.SearchOpts, pipes []string, sortKey string, wantSemantic bool) ([]hf.Model, string, error) {
+	seen := map[string]hf.Model{}
+	var note string
+	per := searchPoolCap / len(pipes)
+	if per < 20 {
+		per = 20
+	}
+	for _, p := range pipes {
+		opts := base
+		opts.Task = p
+		batch, n, err := liveHubSearchFn(ctx, client, opts, sortKey, per, false)
+		if err != nil {
+			continue
+		}
+		if n != "" {
+			note = n
+		}
+		for _, m := range batch {
+			id := m.RepoID()
+			if id == "" {
+				continue
+			}
+			if _, ok := seen[id]; !ok {
+				seen[id] = m
+			}
+		}
+	}
+	out := make([]hf.Model, 0, len(seen))
+	for _, m := range seen {
+		out = append(out, m)
+	}
+	if sortKey == "likes" || sortKey == "downloads" {
+		hf.SortModels(out, sortKey)
+	} else {
+		hf.ScoreRelevance(out, base.Query)
+		out, note = rankSemantic(ctx, base.Query, sortKey, wantSemantic, out, func() semantic.Embedder {
+			return semantic.Discover(ctx, client.Token)
+		})
+	}
+	if len(out) > searchPoolCap {
+		out = out[:searchPoolCap]
+	}
+	return out, note, nil
+}
+
+func searchIndexAtPath(ctx context.Context, req searchRequest, sortKey string, path string, source string, pipes []string, packID string) ([]hf.Model, searchMeta, error) {
 	idx, err := index.Open(path)
 	if err != nil {
 		return nil, searchMeta{}, fmt.Errorf("open %s: %w", source, err)
@@ -127,19 +216,21 @@ func searchIndexAtPath(ctx context.Context, req searchRequest, sortKey string, p
 		q = strings.TrimSpace(req.Query + " " + strings.Join(extra, " "))
 	}
 
-	pipeline := req.Task
-	if pipeline == "any" || pipeline == "auto" || pipeline == "" {
-		pipeline = ""
-	}
 	filters := index.SearchFilters{
-		Author:      req.Author,
-		Library:     req.Library,
-		License:     req.License,
-		PipelineTag: pipeline,
-		Engine:      req.Engine,
-		Filter:      req.Filter,
-		Sort:        sortKey,
-		Limit:       100,
+		Author:  req.Author,
+		Library: req.Library,
+		License: req.License,
+		Engine:  req.Engine,
+		Filter:  req.Filter,
+		Sort:    sortKey,
+		Limit:   100,
+		PackType: packID,
+	}
+	switch {
+	case len(pipes) == 1:
+		filters.PipelineTag = pipes[0]
+	case len(pipes) > 1:
+		filters.PipelineTags = pipes
 	}
 
 	models, err := idx.Search(ctx, q, filters)
@@ -167,10 +258,6 @@ func searchIndexAtPath(ctx context.Context, req searchRequest, sortKey string, p
 	if sortKey == "likes" || sortKey == "downloads" {
 		hf.SortModels(models, sortKey)
 		meta.RankSource = source + " + " + sortKey
-	}
-
-	if len(models) > req.Limit {
-		models = models[:req.Limit]
 	}
 
 	return models, meta, nil

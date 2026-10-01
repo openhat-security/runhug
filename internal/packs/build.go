@@ -111,6 +111,9 @@ func selectCategories(ids []string) []Category {
 	for _, id := range ids {
 		c, ok := LookupCategory(id)
 		if !ok {
+			c, ok = CategoryFromType(id)
+		}
+		if !ok {
 			continue
 		}
 		out = append(out, c)
@@ -204,7 +207,7 @@ func buildOne(ctx context.Context, client *hf.Client, opts BuildOpts, cat Catego
 				continue
 			}
 			seen[id] = true
-			if err := idx.InsertModel(m); err != nil {
+			if err := idx.InsertModelWithPack(m, cat.ID); err != nil {
 				return err
 			}
 			total++

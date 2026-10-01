@@ -170,7 +170,7 @@ func installPackCategories(ctx context.Context, ids []string) error {
 		if err := rc.DownloadPack(ctx, info, packPath); err != nil {
 			return fmt.Errorf("download %s: %w", id, err)
 		}
-		n, wm, err := packs.MergePackDB(idx, packPath)
+		n, wm, err := packs.MergePackDBWithID(idx, packPath, id)
 		if err != nil {
 			return fmt.Errorf("merge %s: %w", id, err)
 		}
@@ -411,7 +411,7 @@ func replacePackFromRelease(
 	if err := rc.DownloadPack(ctx, info, packPath); err != nil {
 		return 0, err
 	}
-	n, wm, err := packs.MergePackDB(idx, packPath)
+	n, wm, err := packs.MergePackDBWithID(idx, packPath, id)
 	if err != nil {
 		return 0, err
 	}

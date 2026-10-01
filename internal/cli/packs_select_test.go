@@ -12,14 +12,14 @@ func TestParseCategorySelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ids) != 2 || ids[0] != "text-generation" || ids[1] != "video" {
+	if len(ids) != 2 || ids[0] != "text-generation" || ids[1] != "text-to-image" {
 		t.Fatalf("%v", ids)
 	}
 	ids, err = parseCategorySelection("1-2", cats)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ids) != 2 || ids[0] != "text-generation" || ids[1] != "text-to-image" {
+	if len(ids) != 2 || ids[0] != "text-generation" || ids[1] != "vision" {
 		t.Fatalf("%v", ids)
 	}
 	ids, err = parseCategorySelection("all", cats)
@@ -33,5 +33,9 @@ func TestParseCategorySelection(t *testing.T) {
 	ids, err = parseCategorySelection("gguf", cats)
 	if err != nil || len(ids) != 1 || ids[0] != "gguf" {
 		t.Fatalf("%v %v", ids, err)
+	}
+	ids, err = parseCategorySelection("llm", cats)
+	if err != nil || len(ids) != 1 || ids[0] != "text-generation" {
+		t.Fatalf("alias llm: %v %v", ids, err)
 	}
 }
