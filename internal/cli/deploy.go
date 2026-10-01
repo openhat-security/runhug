@@ -19,8 +19,11 @@ import (
 )
 
 func cmdDeploy(args []string) error {
-	if len(args) == 0 || isHelpArg(args[0]) {
+	if len(args) == 0 {
 		printDeployHelp(os.Stdout)
+		return nil
+	}
+	if showCmdHelp(args, "runhug deploy", printDeployHelp, printDeployHelpFull) {
 		return nil
 	}
 	// Peek --provider before RunPod flag parse so GCP-only flags (--project, …) work.

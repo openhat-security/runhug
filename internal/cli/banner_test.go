@@ -47,16 +47,16 @@ func TestPrintUsageIncludesGroupedHelp(t *testing.T) {
 	out := buf.String()
 	for _, want := range []string{
 		"setup",
-		"search & index",
-		"runpod",
+		"search",
+		"deploy",
+		"RunPod",
 		"local",
 		"config",
 		"update",
-		"connect hf",
-		"search nlp",
+		"connect [hf]",
 		"local index",
 		"upgrade",
-		"deploy it in minutes",
+		"find, deploy, and run",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help missing %q\n%s", want, out)
@@ -91,8 +91,16 @@ func TestPrintUsageOmitsEnvDump(t *testing.T) {
 	if strings.Contains(out, "Tips") {
 		t.Fatalf("default help must not include Tips block\n%s", out)
 	}
-	if !strings.Contains(out, "\nwizard\n") && !strings.HasSuffix(strings.TrimSpace(out), "wizard") {
-		t.Fatalf("expected trailing wizard hint\n%s", out)
+	if !strings.Contains(out, "wizard") {
+		t.Fatalf("expected wizard hint\n%s", out)
+	}
+	if strings.Contains(out, "--help-full") {
+		t.Fatalf("bare usage must not suggest --help-full (only explicit --help)\n%s", out)
+	}
+	var helpBuf bytes.Buffer
+	printUsage(&helpBuf, true)
+	if !strings.Contains(helpBuf.String(), "--help-full") {
+		t.Fatalf("explicit --help should point to --help-full\n%s", helpBuf.String())
 	}
 	if strings.Contains(out, "Tips") || strings.Contains(out, "New here?") {
 		t.Fatalf("help must not include Tips block\n%s", out)
@@ -100,6 +108,68 @@ func TestPrintUsageOmitsEnvDump(t *testing.T) {
 	for _, leak := range []string{"gpus / import", "(guide", "(deployments)", "(serve)", "aliases:"} {
 		if strings.Contains(out, leak) {
 			t.Fatalf("root help must not include clutter %q\n%s", leak, out)
+		}
+	}
+}
+
+func TestPrintUsageFullHasDetail(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	var buf bytes.Buffer
+	printUsageFull(&buf)
+	out := buf.String()
+	for _, want := range []string{
+		"Full command reference",
+		"what",
+		"when",
+		"wizard",
+		"deploy <model>",
+		"RUNPOD_API_KEY",
+		"HF_TOKEN",
+		"typical flow",
+		"--help",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("full help missing %q\n%s", want, out)
+		}
+	}
+	if !strings.Contains(out, "Interactive first-run") && !strings.Contains(out, "first-run checklist") {
+		t.Fatalf("full help should explain wizard\n%s", out)
+	}
+}
+
+func TestHelpModeFromArgs(t *testing.T) {
+	cases := []struct {
+		args []string
+		want string
+	}{
+		{nil, ""},
+		{[]string{"list"}, ""},
+		{[]string{"--help"}, "short"},
+		{[]string{"-h"}, "short"},
+		{[]string{"help"}, "short"},
+		{[]string{"help", "full"}, "full"},
+		{[]string{"--help", "--full"}, "full"},
+		{[]string{"--help-full"}, "full"},
+		{[]string{"help-full"}, "full"},
+	}
+	for _, tc := range cases {
+		if got := helpModeFromArgs(tc.args); got != tc.want {
+			t.Fatalf("args=%v got %q want %q", tc.args, got, tc.want)
+		}
+	}
+}
+
+func TestGPUHelpFull(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	var short, full strings.Builder
+	printGPUHelp(&short)
+	printGPUHelpFull(&full)
+	if strings.Contains(short.String(), "--help-full") {
+		t.Fatalf("short gpu help body should not embed details hint (showCmdHelp adds it)\n%s", short.String())
+	}
+	for _, want := range []string{"what", "when", "list [query]", "update", "examples", "Short list:"} {
+		if !strings.Contains(full.String(), want) {
+			t.Fatalf("gpu full help missing %q\n%s", want, full.String())
 		}
 	}
 }

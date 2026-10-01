@@ -18,8 +18,12 @@ import (
 )
 
 func cmdLocal(args []string) error {
+	if showCmdHelp(args, "runhug local", printLocalHelp, printLocalHelpFull) {
+		return nil
+	}
 	if len(args) == 0 {
-		return cmdLocalAdd(nil)
+		printLocalHelp(os.Stdout)
+		return nil
 	}
 	switch args[0] {
 	case "add":
@@ -33,7 +37,7 @@ func cmdLocal(args []string) error {
 	case "setup", "doctor":
 		return cmdLocalSetup(args[1:])
 	default:
-		return fmt.Errorf("unknown local command %q (setup, add, start, stop, run)", args[0])
+		return fmt.Errorf("unknown local command %q (setup, add, start, stop, run)\nRun `runhug local --help` or `runhug local --help-full`", args[0])
 	}
 }
 

@@ -15,6 +15,9 @@ import (
 )
 
 func cmdGPU(args []string) error {
+	if showCmdHelp(args, "runhug gpu", printGPUHelp, printGPUHelpFull) {
+		return nil
+	}
 	if len(args) == 0 {
 		return cmdGPUList(nil)
 	}
@@ -29,31 +32,24 @@ func cmdGPU(args []string) error {
 		return cmdGPUShow(args[1:])
 	case "update", "refresh":
 		return cmdGPUUpdate(args[1:])
-	case "help", "-h", "--help":
-		printGPUUsage()
-		return nil
 	default:
 		// Treat unknown first token as list query for convenience: `gpu 4090`
 		if strings.HasPrefix(args[0], "-") {
 			return cmdGPUList(args)
 		}
-		return fmt.Errorf("unknown gpu command %q (list|set|clear|show)", args[0])
+		return fmt.Errorf("unknown gpu command %q (list|set|clear|show|update)\nRun `runhug gpu --help` or `runhug gpu --help-full`", args[0])
 	}
-}
-
-func printGPUUsage() {
-	printGPUHelp(os.Stdout)
 }
 
 func printGPUHelp(w io.Writer) {
 	helpUsage(w, "runhug gpu <command>")
 
 	helpSection(w, "commands")
-	helpCmd(w, "list", "hardware index + runpod/gcp/local")
+	helpCmd(w, "list", "hardware catalog + RunPod/GCP/local")
 	helpCmd(w, "set [name]", "save preference for deploy / local")
 	helpCmd(w, "clear", "forget saved preference")
 	helpCmd(w, "show", "print saved preference")
-	helpCmd(w, "update", "refresh NVIDIA + GCP catalogs")
+	helpCmd(w, "update", "refresh NVIDIA + AMD + GCP catalogs")
 	fmt.Fprintln(w)
 
 	helpSection(w, "list flags")
@@ -65,7 +61,55 @@ func printGPUHelp(w io.Writer) {
 	fmt.Fprintf(w, "%s %s\n", dim("alias:"), cyan("runhug gpus …"))
 }
 
+func printGPUHelpFull(w io.Writer) {
+	helpUsage(w, "runhug gpu <command>")
+	fmt.Fprintln(w, dim("Hardware catalogs for deploy sizing, local picks, and cloud pools."))
+	fmt.Fprintln(w, dim("Short list:"), cyan("runhug gpu --help"))
+	fmt.Fprintln(w)
+
+	helpFullSection(w, "commands",
+		helpFullEntry{
+			Cmd:  "list [query]",
+			What: "Browse the hardware index, optionally joined with live RunPod/GCP stock and GPUs detected on this machine.",
+			When: "Choosing a pool for deploy, comparing VRAM/price, or checking what you can run locally.",
+			More: "Alias: runhug gpus …\n  --filter all|local|amd|nvidia|runpod|gcp\n  --sort best|cheapest|value|vram|name\n  --query/-q substring · --min-vram N · --limit N · --json",
+		},
+		helpFullEntry{
+			Cmd:  "set [name|#]",
+			What: "Save a GPU preference (provider + key/name/VRAM) used by deploy and local flows.",
+			When: "You always want the same pool without retyping it each deploy.",
+			More: "Interactive picker if no name given (TTY). --filter / --sort narrow the list.",
+		},
+		helpFullEntry{
+			Cmd:  "clear",
+			What: "Remove the saved GPU preference from settings.",
+			When: "Switching providers or clearing a shared machine.",
+		},
+		helpFullEntry{
+			Cmd:  "show",
+			What: "Print the saved preference (provider, key, name, VRAM).",
+			When: "Confirming what deploy will prefer.",
+		},
+		helpFullEntry{
+			Cmd:  "update",
+			What: "Refresh NVIDIA, AMD, and GCP catalogs into ~/.config/runhug/gpudb/.",
+			When: "Catalog looks stale, or after new SKUs land upstream.",
+			More: "Reports how many GPUs were added (or “no new GPUs”).\n  --nvidia / --amd / --gcp refresh one vendor only.\n  --release prefers GitHub Release assets when published.",
+		},
+	)
+
+	helpSection(w, "examples")
+	fmt.Fprintln(w, "  "+cyan(`runhug gpu list --filter local`))
+	fmt.Fprintln(w, "  "+cyan(`runhug gpu list --query MI300 --sort vram`))
+	fmt.Fprintln(w, "  "+cyan(`runhug gpu set "RTX 4090"`))
+	fmt.Fprintln(w, "  "+cyan(`runhug gpu update`))
+	fmt.Fprintln(w)
+}
+
 func cmdGPUUpdate(args []string) error {
+	if showCmdHelp(args, "runhug gpu update", printGPUUpdateHelp, printGPUUpdateHelpFull) {
+		return nil
+	}
 	fs := newFlagSet("gpu update")
 	nvidia := fs.Bool("nvidia", false, "refresh NVIDIA hardware index only")
 	amd := fs.Bool("amd", false, "refresh AMD hardware index only")
@@ -86,6 +130,8 @@ func cmdGPUUpdate(args []string) error {
 	}
 
 	heading(os.Stdout, "Update GPU catalogs")
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintln(os.Stdout, dim("Shipped with the CLI; updates land in ~/.config/runhug/gpudb/."))
 	fmt.Fprintln(os.Stdout)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
@@ -112,6 +158,70 @@ func cmdGPUUpdate(args []string) error {
 	return nil
 }
 
+func printGPUUpdateHelp(w io.Writer) {
+	helpUsage(w, "runhug gpu update")
+	helpSection(w, "flags")
+	helpFlag(w, "--nvidia", "refresh NVIDIA index only")
+	helpFlag(w, "--amd", "refresh AMD index only")
+	helpFlag(w, "--gcp", "refresh GCP catalog only")
+	helpFlag(w, "--release", "prefer GitHub Release assets (default true)")
+	fmt.Fprintln(w)
+}
+
+func printGPUUpdateHelpFull(w io.Writer) {
+	helpUsage(w, "runhug gpu update")
+	fmt.Fprintln(w, dim("Refresh hardware catalogs into ~/.config/runhug/gpudb/."))
+	fmt.Fprintln(w)
+	helpFullSection(w, "behavior",
+		helpFullEntry{
+			Cmd:  "default",
+			What: "Fetches NVIDIA + AMD + GCP catalogs and writes JSON under the gpudb cache dir.",
+			When: "After install, or when list looks missing new cards.",
+			More: "Compares against the previous cache and prints “N added: …” or “no new GPUs”.",
+		},
+		helpFullEntry{
+			Cmd:  "--nvidia / --amd / --gcp",
+			What: "Limit the refresh to one vendor.",
+			When: "You only care about one catalog (e.g. GCP after gcloud auth).",
+		},
+	)
+}
+
+func printGPUListHelp(w io.Writer) {
+	helpUsage(w, "runhug gpu list [query]")
+	helpSection(w, "flags")
+	helpFlag(w, "--filter", "all|local|amd|nvidia|runpod|gcp")
+	helpFlag(w, "--sort", "best|cheapest|value|vram|name")
+	helpFlag(w, "--query -q", "substring filter")
+	helpFlag(w, "--min-vram", "minimum VRAM GB")
+	helpFlag(w, "--limit", "max rows (0 = all)")
+	helpFlag(w, "--json", "print JSON")
+	fmt.Fprintln(w)
+}
+
+func printGPUListHelpFull(w io.Writer) {
+	helpUsage(w, "runhug gpu list [query]")
+	fmt.Fprintln(w, dim("List and filter the hardware catalog."))
+	fmt.Fprintln(w)
+	helpFullSection(w, "flags",
+		helpFullEntry{
+			Cmd:  "--filter local",
+			What: "Show GPUs detected on this machine plus the local-capable catalog.",
+			When: "Deciding what you can run without cloud.",
+		},
+		helpFullEntry{
+			Cmd:  "--filter runpod|gcp",
+			What: "Cloud pools (live stock when connected).",
+			When: "Picking a deploy target.",
+		},
+		helpFullEntry{
+			Cmd:  "--sort / --query / --min-vram",
+			What: "Rank and narrow rows.",
+			When: "Searching for a class (e.g. MI300) or a VRAM floor.",
+		},
+	)
+}
+
 func printGPUDelta(w io.Writer, added []string) {
 	indent := dim(padRight("", 9))
 	if len(added) == 0 {
@@ -129,6 +239,9 @@ func printGPUDelta(w io.Writer, added []string) {
 }
 
 func cmdGPUList(args []string) error {
+	if showCmdHelp(args, "runhug gpu list", printGPUListHelp, printGPUListHelpFull) {
+		return nil
+	}
 	fs := newFlagSet("gpu list")
 	filter := fs.String("filter", "all", "all | local | amd | nvidia | runpod | gcp")
 	sortKey := fs.String("sort", "best", "best | cheapest | value | vram | name")
@@ -324,6 +437,9 @@ func printGPUTableRows(rows []gpuRow) {
 }
 
 func cmdGPUSet(args []string) error {
+	if showCmdHelp(args, "runhug gpu", printGPUHelp, printGPUHelpFull) {
+		return nil
+	}
 	fs := newFlagSet("gpu set")
 	filter := fs.String("filter", "all", "all | local | amd | nvidia | runpod | gcp")
 	sortKey := fs.String("sort", "best", "best | cheapest | value | vram | name")

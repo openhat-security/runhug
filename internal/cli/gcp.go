@@ -40,12 +40,12 @@ func cmdGCP(args []string) error {
 		return cmdGCPPush(args[1:])
 	case "opencode":
 		return cmdGCPOpenCode(args[1:])
-	case "-h", "--help", "help":
-		printGCPHelp(os.Stdout)
-		return nil
 	default:
+		if showCmdHelp(args, "runhug gcp", printGCPHelp, printGCPHelpFull) {
+			return nil
+		}
 		printGCPHelp(os.Stderr)
-		return fmt.Errorf("unknown gcp command %q", args[0])
+		return fmt.Errorf("unknown gcp command %q\nRun `runhug gcp --help` or `runhug gcp --help-full`", args[0])
 	}
 }
 

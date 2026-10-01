@@ -25,8 +25,14 @@ func TestGCPHelp(t *testing.T) {
 	if !strings.Contains(s, "gcp") {
 		t.Fatal("usage should mention gcp")
 	}
-	if !strings.Contains(s, "--provider gcp") {
-		t.Fatal("usage should mention --provider gcp")
+	full := gcpHelpText()
+	if !strings.Contains(full, "--image") {
+		t.Fatal("gcp help should mention --image")
+	}
+	var fullBuf bytes.Buffer
+	printGCPHelpFull(&fullBuf)
+	if !strings.Contains(fullBuf.String(), "when") {
+		t.Fatal("gcp --help-full should include when-to-use detail")
 	}
 }
 
