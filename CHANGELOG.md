@@ -7,6 +7,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-01
+
 ### Added
 - `runhug search --type`: broad pack buckets (`llm`, `vision`, `image`, `video`, `audio`, `embeddings`, `gguf`, …) distinct from `--task` (exact Hub `pipeline_tag`).
 - `runhug search --index`: upsert the search pool into `models.db` + `packs/<type>.db` with `pack_membership` (deduped by repo id); optional `--share=true|false` or TTY prompt to open a community PR via `gh`.
