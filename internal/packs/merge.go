@@ -12,9 +12,41 @@ import (
 	"github.com/adamsiwiec1/runhug/internal/index"
 )
 
+// UpsertModels inserts/updates models and returns count + max lastModified.
+func UpsertModels(dest *index.Index, models []hf.Model) (int, time.Time, error) {
+	return UpsertModelsWithPack(dest, models, "")
+}
+
+// UpsertModelsWithPack upserts models and optionally tags pack membership.
+func UpsertModelsWithPack(dest *index.Index, models []hf.Model, packID string) (int, time.Time, error) {
+	var maxLM time.Time
+	n := 0
+	for _, m := range models {
+		var err error
+		if packID != "" {
+			err = dest.InsertModelWithPack(m, packID)
+		} else {
+			err = dest.InsertModel(m)
+		}
+		if err != nil {
+			return n, maxLM, fmt.Errorf("upsert %s: %w", m.RepoID(), err)
+		}
+		n++
+		if lm := parseLM(m.LastModified); lm.After(maxLM) {
+			maxLM = lm
+		}
+	}
+	return n, maxLM, nil
+}
+
 // MergePackDB upserts all models from packPath into dest Index.
 // Returns rows upserted and the max lastModified watermark (RFC3339 or empty).
 func MergePackDB(dest *index.Index, packPath string) (int, string, error) {
+	return MergePackDBWithID(dest, packPath, "")
+}
+
+// MergePackDBWithID merges a pack and records membership under packID when set.
+func MergePackDBWithID(dest *index.Index, packPath, packID string) (int, string, error) {
 	src, err := index.OpenReadOnly(packPath)
 	if err != nil {
 		return 0, "", err
@@ -25,27 +57,11 @@ func MergePackDB(dest *index.Index, packPath string) (int, string, error) {
 	if err != nil {
 		return 0, "", err
 	}
-	n, maxLM, err := UpsertModels(dest, models)
+	n, maxLM, err := UpsertModelsWithPack(dest, models, packID)
 	if err != nil {
 		return n, "", err
 	}
 	return n, formatWatermark(maxLM), nil
-}
-
-// UpsertModels inserts/updates models and returns count + max lastModified.
-func UpsertModels(dest *index.Index, models []hf.Model) (int, time.Time, error) {
-	var maxLM time.Time
-	n := 0
-	for _, m := range models {
-		if err := dest.InsertModel(m); err != nil {
-			return n, maxLM, fmt.Errorf("upsert %s: %w", m.RepoID(), err)
-		}
-		n++
-		if lm := parseLM(m.LastModified); lm.After(maxLM) {
-			maxLM = lm
-		}
-	}
-	return n, maxLM, nil
 }
 
 // ApplyDeltaJSONL reads newline-delimited hf.Model JSON and upserts into dest.

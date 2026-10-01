@@ -89,6 +89,13 @@ CREATE TABLE IF NOT EXISTS metadata (
 	key TEXT PRIMARY KEY,
 	value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS pack_membership (
+	model_id TEXT NOT NULL,
+	pack_id TEXT NOT NULL,
+	PRIMARY KEY (model_id, pack_id)
+);
+CREATE INDEX IF NOT EXISTS idx_pack_membership_pack ON pack_membership(pack_id);
 `
 	_, err := idx.db.Exec(schema)
 	return err
@@ -96,6 +103,10 @@ CREATE TABLE IF NOT EXISTS metadata (
 
 // InsertModel adds or updates a model in the index.
 func (idx *Index) InsertModel(m hf.Model) error {
+	id := m.RepoID()
+	if id == "" {
+		return nil
+	}
 	tagsJSON, _ := json.Marshal(m.Tags)
 	lastMod := time.Time{}
 	if m.LastModified != "" {
@@ -116,7 +127,7 @@ func (idx *Index) InsertModel(m hf.Model) error {
 			pipeline_tag = excluded.pipeline_tag,
 			last_modified = excluded.last_modified,
 			indexed_at = strftime('%s', 'now')
-	`, m.ID, m.Author, m.CardDescription(), string(tagsJSON), m.Likes, m.Downloads,
+	`, id, m.Author, m.CardDescription(), string(tagsJSON), m.Likes, m.Downloads,
 		m.LibraryName, m.License(), m.PipelineTag, lastMod.Unix())
 
 	return err
@@ -159,9 +170,29 @@ func (idx *Index) Search(ctx context.Context, query string, filters SearchFilter
 		sqlQuery += " AND m.license = ?"
 		args = append(args, filters.License)
 	}
-	if filters.PipelineTag != "" {
-		sqlQuery += " AND m.pipeline_tag = ?"
-		args = append(args, filters.PipelineTag)
+	membershipActive := false
+	if filters.PackType != "" {
+		var n int
+		_ = idx.db.QueryRow(`SELECT COUNT(*) FROM pack_membership WHERE pack_id = ?`, filters.PackType).Scan(&n)
+		if n > 0 {
+			membershipActive = true
+			sqlQuery += " AND EXISTS (SELECT 1 FROM pack_membership pm WHERE pm.model_id = m.id AND pm.pack_id = ?)"
+			args = append(args, filters.PackType)
+		}
+	}
+	if !membershipActive {
+		if filters.PipelineTag != "" {
+			sqlQuery += " AND m.pipeline_tag = ?"
+			args = append(args, filters.PipelineTag)
+		}
+		if len(filters.PipelineTags) > 0 {
+			holders := make([]string, len(filters.PipelineTags))
+			for i, p := range filters.PipelineTags {
+				holders[i] = "?"
+				args = append(args, p)
+			}
+			sqlQuery += " AND m.pipeline_tag IN (" + strings.Join(holders, ",") + ")"
+		}
 	}
 	if filters.Engine != "" {
 		// Engine maps to library_name: gguf → "gguf", vllm → "transformers"
@@ -234,16 +265,61 @@ func (idx *Index) Search(ctx context.Context, query string, filters SearchFilter
 
 // SearchFilters specifies filters for index search.
 type SearchFilters struct {
-	Author      string
-	Library     string
-	License     string
-	PipelineTag string
-	Engine      string
-	Filter      string
-	Sort        string
-	Limit       int
+	Author       string
+	Library      string
+	License      string
+	PipelineTag  string   // exact single tag
+	PipelineTags []string // OR of pipeline tags (from --type expand)
+	PackType     string   // canonical pack/type id; prefers pack_membership when populated
+	Engine       string
+	Filter       string
+	Sort         string
+	Limit        int
 }
 
+// AddMembership records that modelID belongs to packID (idempotent).
+func (idx *Index) AddMembership(modelID, packID string) error {
+	modelID = strings.TrimSpace(modelID)
+	packID = strings.TrimSpace(packID)
+	if modelID == "" || packID == "" {
+		return nil
+	}
+	_, err := idx.db.Exec(`
+		INSERT INTO pack_membership (model_id, pack_id) VALUES (?, ?)
+		ON CONFLICT(model_id, pack_id) DO NOTHING
+	`, modelID, packID)
+	return err
+}
+
+// InsertModelWithPack upserts the model and records pack membership.
+func (idx *Index) InsertModelWithPack(m hf.Model, packID string) error {
+	if err := idx.InsertModel(m); err != nil {
+		return err
+	}
+	return idx.AddMembership(m.RepoID(), packID)
+}
+
+// HasMembership reports whether modelID is tagged with packID.
+func (idx *Index) HasMembership(modelID, packID string) (bool, error) {
+	var one int
+	err := idx.db.QueryRow(`
+		SELECT 1 FROM pack_membership WHERE model_id = ? AND pack_id = ? LIMIT 1
+	`, modelID, packID).Scan(&one)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// MembershipCount returns how many models are tagged with packID.
+func (idx *Index) MembershipCount(packID string) (int, error) {
+	var n int
+	err := idx.db.QueryRow(`SELECT COUNT(*) FROM pack_membership WHERE pack_id = ?`, packID).Scan(&n)
+	return n, err
+}
 
 // HasModel reports whether a Hugging Face repo id already exists in the index.
 // models.id is the unique primary key (HF repo id, e.g. org/name).

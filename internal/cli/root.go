@@ -24,6 +24,8 @@ func Run(args []string) error {
 		return cmdInit(rest)
 	case "search":
 		return cmdSearch(rest)
+	case "packs":
+		return cmdPacks(rest)
 	case "recommend":
 		return cmdRecommend(rest)
 	case "inspect":
@@ -104,12 +106,13 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w)
 
 	helpSection(w, "search & index")
-	helpCmd(w, "search [query]", "local index; --online for hub")
+	helpCmd(w, "search [query]", "local index; --online for hub; --type / --index")
+	helpCmd(w, "packs", "build / upsert / categories (hfpacks in-CLI)")
 	helpCmd(w, "recommend [query]", "shortlist + optional advisor")
 	helpCmd(w, "recommend gpu <m>", "gpu / vram for one model")
 	helpCmd(w, "inspect <model>", "hub card, vram, cheaper alternatives")
-	helpCmd(w, "update", "refresh index")
-	helpCmd(w, "upgrade", "update this CLI")
+	helpCmd(w, "update", "refresh index (use --cli / self to upgrade CLI)")
+	helpCmd(w, "upgrade", "upgrade CLI via brew/scoop/npm/apt/…")
 	fmt.Fprintln(w)
 
 	helpSection(w, "deploy")

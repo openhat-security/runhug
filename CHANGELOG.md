@@ -8,7 +8,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- README: [hfpacks](https://github.com/openhat-security/hfpacks) section with steps to build Hub index packs and share them via the community Releases process.
+- `runhug search --type`: broad pack buckets (`llm`, `vision`, `image`, `video`, `audio`, `embeddings`, `gguf`, …) distinct from `--task` (exact Hub `pipeline_tag`).
+- `runhug search --index`: upsert the search pool into `models.db` + `packs/<type>.db` with `pack_membership` (deduped by repo id); optional `--share=true|false` or TTY prompt to open a community PR via `gh`.
+- `runhug packs` subcommands: `categories`, `build`, `upsert`, `index` (hfpacks workflow embedded).
+- Expanded release pack set: `vision`, `embeddings` (plus existing text-generation / image / video / audio / gguf).
+
+### Changed
+- README: in-CLI indexing + community share via `--index` / `--share` (hfpacks remains compatible for standalone builds).
 
 ## [0.3.1] - 2026-09-29
 

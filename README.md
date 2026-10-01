@@ -85,54 +85,59 @@ runhug start opencode         # OpenCode bridge
 
 **Record the demo GIF:** `brew install vhs && make demo-vhs` → `assets/screenshots/runhug-demo.{gif,mp4}` (`demos/runhug.tape`).
 
-## Build your own model index ([hfpacks](https://github.com/openhat-security/hfpacks))
+## Build your own model index
 
-`runhug init` / `update --packs` installs the **community category index packs** we ship on [GitHub Releases](https://github.com/openhat-security/runhug/releases) (`index-*.db` + `index-manifest.json`). Those packs are built with **[hfpacks](https://github.com/openhat-security/hfpacks)** — a small CLI that crawls the Hugging Face Hub and writes the same SQLite + manifest layout runhug already understands.
+`runhug init` / `update --packs` installs **community category index packs** from [GitHub Releases](https://github.com/openhat-security/runhug/releases). You can also build and contribute packs from the CLI (or via standalone [hfpacks](https://github.com/openhat-security/hfpacks)).
 
-### Build a pack set locally
+### Search by type and index locally
+
+`--task` is an **exact** Hub `pipeline_tag`. `--type` is a **broad** pack bucket (expands to one or more pipelines, or `filter=gguf`).
 
 ```bash
-git clone https://github.com/openhat-security/hfpacks.git
-cd hfpacks && go build -o bin/hfpacks ./cmd/hfpacks
-
-# optional but recommended for Hub rate limits
-export HF_TOKEN=hf_…
-
-# crawl (auto proxy pool by default; use -no-proxy for direct Hub)
-./bin/hfpacks build -out dist/index
-# examples:
-#   ./bin/hfpacks build -out dist/index -categories text-generation,gguf -limit 5000
-#   ./bin/hfpacks build -out dist/index -no-proxy -token "$HF_TOKEN"
+runhug packs categories              # types + aliases
+runhug search aero --type llm --online --limit 50
+runhug search aero --type llm --online --index          # upsert pool; prompt to share
+runhug search aero --type vision --online --index --share=false
 ```
 
-Output (compatible with runhug):
+`--index` upserts the search pool into `~/.config/runhug/models.db` and `packs/<type>.db` (no duplicate rows; membership is additive). After indexing, a TTY asks whether to share with the community (`--share=true|false` skips the prompt). Share requires [`gh`](https://cli.github.com/) and opens a PR on `openhat-security/runhug` with `contrib/packs/<type>/` artifacts.
+
+### Build a full pack set
+
+```bash
+# preferred: embedded in runhug
+runhug packs build --out dist/index
+runhug packs upsert Qwen/Qwen3-8B --type llm
+
+# or standalone hfpacks (proxy pool)
+git clone https://github.com/openhat-security/hfpacks.git
+cd hfpacks && go build -o bin/hfpacks ./cmd/hfpacks
+export HF_TOKEN=hf_…
+./bin/hfpacks build -out dist/index
+```
+
+Output layout:
 
 ```
 dist/index/
   index-manifest.json
   index-text-generation.db
+  index-vision.db
   index-text-to-image.db
   index-video.db
   index-audio.db
+  index-embeddings.db
   index-gguf.db
 ```
 
-Use your packs privately by pointing a local merge / `update --packs`-style install at that directory, or keep `~/.config/runhug/models.db` after importing.
-
 ### Share packs with the community
 
-Anyone can improve the shared indexes. The contract is the **manifest + category DBs** above — same schema as release assets.
+1. **Index or build** (`runhug search … --index` or `runhug packs build` / hfpacks).
+2. **Verify**: `runhug search -q "…" --type …` and `runhug inspect`.
+3. **Share**: accept the post-index prompt, or pass `--share=true` (needs `gh`). Alternately open a manual PR with DBs + manifest or a public download URL.
+4. **Maintainers** publish Release assets so `init` / `update --packs` pick them up.
 
-1. **Build** with hfpacks (note your `hfpacks` commit / flags / date in the PR).
-2. **Verify** locally: install or merge the DBs, then `runhug search -q "…"` and spot-check a few `runhug inspect` rows.
-3. **Open a pull request** on [openhat-security/runhug](https://github.com/openhat-security/runhug) that either:
-   - attaches the new `index-*.db` + `index-manifest.json` as proposed release assets (describe category coverage, row counts, and quality floors such as min likes/downloads), or
-   - links a public download (Release / Gist / your fork’s Release) maintainers can promote into the next runhug index-pack release.
-4. **Maintainers** review schema compatibility, size, and licensing of metadata, then publish under [Releases](https://github.com/openhat-security/runhug/releases) so `runhug init` / `update --packs` pick them up for everyone.
-
-Prefer a PR discussion before uploading multi‑hundred‑MB artifacts to the main repo tree — Releases (or an external URL in the issue) are the right place for the binaries.
-
-Questions or pack ideas: open a [Discussion](https://github.com/openhat-security/runhug/discussions) or issue tagged for indexing.
+Prefer Releases (or an external URL) over committing multi‑hundred‑MB binaries to `main`. Questions: [Discussions](https://github.com/openhat-security/runhug/discussions).
 
 ## License & contributing
 
