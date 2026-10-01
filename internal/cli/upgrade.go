@@ -19,8 +19,7 @@ import (
 )
 
 func cmdUpgrade(args []string) error {
-	if len(args) > 0 && isHelpArg(args[0]) {
-		printUpgradeHelp(os.Stdout)
+	if showCmdHelp(args, "runhug upgrade", printUpgradeHelp, printUpgradeHelpFull) {
 		return nil
 	}
 	fs := newFlagSet("upgrade")

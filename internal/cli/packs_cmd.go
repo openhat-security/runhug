@@ -18,8 +18,11 @@ import (
 )
 
 func cmdPacks(args []string) error {
-	if len(args) == 0 || isHelpArg(args[0]) {
+	if len(args) == 0 {
 		printPacksHelp(os.Stdout)
+		return nil
+	}
+	if showCmdHelp(args, "runhug packs", printPacksHelp, printPacksHelpFull) {
 		return nil
 	}
 	sub, rest := args[0], args[1:]
@@ -32,12 +35,9 @@ func cmdPacks(args []string) error {
 		return cmdPacksUpsert(rest)
 	case "index":
 		return cmdPacksIndex(rest)
-	case "help", "-h", "--help":
-		printPacksHelp(os.Stdout)
-		return nil
 	default:
 		printPacksHelp(os.Stderr)
-		return fmt.Errorf("unknown packs command %q", sub)
+		return fmt.Errorf("unknown packs command %q\nRun `runhug packs --help` or `runhug packs --help-full`", sub)
 	}
 }
 

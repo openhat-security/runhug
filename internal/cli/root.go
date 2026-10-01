@@ -84,69 +84,82 @@ func Run(args []string) error {
 		fmt.Printf("%s %s\n", version.Name, version.Version)
 		return nil
 	case "help", "-h", "--help":
-		printUsage(os.Stdout)
+		if wantsFullHelp(rest) {
+			printUsageFull(os.Stdout)
+			return nil
+		}
+		printUsage(os.Stdout, true)
+		return nil
+	case "help-full", "--help-full":
+		printUsageFull(os.Stdout)
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q\n\nRun `%s help` for usage", cmd, version.Name)
+		return fmt.Errorf("unknown command %q\n\nRun `%s --help`", cmd, version.Name)
 	}
 }
 
-func printUsage(w io.Writer) {
+func wantsFullHelp(args []string) bool {
+	for _, a := range args {
+		switch strings.ToLower(strings.TrimSpace(a)) {
+		case "full", "--full", "-full", "--help-full", "help-full":
+			return true
+		}
+	}
+	return false
+}
+
+func printUsage(w io.Writer, withDetails ...bool) {
 	printBanner(w)
 	printTagline(w)
 
 	helpUsage(w, "runhug <command> [flags]")
 
 	helpSection(w, "setup")
-	helpCmd(w, "wizard", "guided setup")
-	helpCmd(w, "init", "search nlp + index packs")
-	helpCmd(w, "connect", "save runpod api key")
-	helpCmd(w, "connect hf", "save hugging face token")
-	helpCmd(w, "disconnect [hf]", "forget stored key or token")
+	helpCmd(w, "wizard", "guided first-run setup")
+	helpCmd(w, "init", "install search index packs")
+	helpCmd(w, "connect [hf]", "save RunPod key or HF token")
+	helpCmd(w, "disconnect [hf]", "clear saved credentials")
 	fmt.Fprintln(w)
 
-	helpSection(w, "search & index")
-	helpCmd(w, "search [query]", "local index; --online for hub; --type / --index")
-	helpCmd(w, "packs", "build / upsert / categories (hfpacks in-CLI)")
-	helpCmd(w, "recommend [query]", "shortlist + optional advisor")
-	helpCmd(w, "recommend gpu <m>", "gpu / vram for one model")
-	helpCmd(w, "inspect <model>", "hub card, vram, cheaper alternatives")
-	helpCmd(w, "update", "refresh index (use --cli / self to upgrade CLI)")
-	helpCmd(w, "upgrade", "upgrade CLI via brew/scoop/npm/apt/…")
+	helpSection(w, "search")
+	helpCmd(w, "search [query]", "local index (add --online for Hub)")
+	helpCmd(w, "packs", "category index packs")
+	helpCmd(w, "recommend [query]", "shortlist models")
+	helpCmd(w, "recommend gpu <model>", "GPU / VRAM for a model")
+	helpCmd(w, "inspect <model>", "card, VRAM, cheaper options")
+	helpCmd(w, "update", "refresh local model index")
+	helpCmd(w, "upgrade", "upgrade this CLI")
 	fmt.Fprintln(w)
 
 	helpSection(w, "deploy")
-	helpCmd(w, "deploy <model>", "serverless vllm (runpod, default)")
-	helpCmd(w, "deploy --provider gcp", "Spot L4/T4 llama.cpp (or: gcp deploy)")
-	helpCmd(w, "gcp", "GCP GPU provider (deploy|tunnel|status|…)")
-	helpCmd(w, "heretic make <m>", "abliteration training pod + dashboard")
-	helpCmd(w, "list", "local registry + providers")
-	helpCmd(w, "proxy", "openai proxy :8080/v1")
+	helpCmd(w, "deploy <model>", "RunPod serverless (vLLM)")
+	helpCmd(w, "gcp", "GCP Spot GPUs")
+	helpCmd(w, "heretic make <model>", "abliteration training")
+	helpCmd(w, "list", "show deployments")
+	helpCmd(w, "proxy", "OpenAI proxy on :8080")
 	fmt.Fprintln(w)
 
-	helpSection(w, "chat & agents")
-	helpCmd(w, "run [model]", "chat repl")
-	helpCmd(w, "start claude", "wire Claude Code through the bridge")
-	helpCmd(w, "start opencode", "wire opencode to the proxy/deployment")
+	helpSection(w, "chat")
+	helpCmd(w, "run [model]", "chat REPL")
+	helpCmd(w, "start claude|opencode", "point an agent at a deployment")
 	fmt.Fprintln(w)
 
 	helpSection(w, "local")
-	helpCmd(w, "local add|start|stop|run|setup", "models on this machine")
+	helpCmd(w, "local", "run models on this machine")
 	fmt.Fprintln(w)
 
 	helpSection(w, "gpu")
-	helpCmd(w, "gpu list", "hardware index + runpod/gcp/local")
-	helpCmd(w, "gpu set|clear|show", "preference for deploy / local")
-	helpCmd(w, "gpu update", "refresh NVIDIA + GCP catalogs")
-	helpCmd(w, "gpus", "alias for gpu list")
+	helpCmd(w, "gpu list|set|update", "catalog, preference, refresh")
 	fmt.Fprintln(w)
 
 	helpSection(w, "config")
-	helpCmd(w, "config", "config dir + settings")
-	helpCmd(w, "config get|set", "no_color, update_limit, advisor_*")
+	helpCmd(w, "config", "view or edit settings")
 	fmt.Fprintln(w)
 
-	fmt.Fprintf(w, "%s %s\n", dim("new here? use"), cyan("runhug wizard"))
+	fmt.Fprintf(w, "%s %s\n", dim("new here?"), cyan("runhug wizard"))
+	if len(withDetails) > 0 && withDetails[0] {
+		printHelpDetailsHint(w, "runhug")
+	}
 }
 
 func newFlagSet(name string) *flag.FlagSet {

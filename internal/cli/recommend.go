@@ -16,8 +16,11 @@ import (
 )
 
 func cmdRecommend(args []string) error {
-	if len(args) == 0 || isHelpArg(args[0]) {
+	if len(args) == 0 {
 		printRecommendHelp(os.Stdout)
+		return nil
+	}
+	if showCmdHelp(args, "runhug recommend", printRecommendHelp, printRecommendHelpFull) {
 		return nil
 	}
 	if strings.EqualFold(args[0], "gpu") {
@@ -204,8 +207,11 @@ func cmdRecommend(args []string) error {
 }
 
 func cmdRecommendGPU(args []string) error {
-	if len(args) == 0 || isHelpArg(args[0]) {
+	if len(args) == 0 {
 		printRecommendGPUHelp(os.Stdout)
+		return nil
+	}
+	if showCmdHelp(args, "runhug recommend gpu", printRecommendGPUHelp, printRecommendGPUHelpFull) {
 		return nil
 	}
 	fs := newFlagSet("recommend-gpu")

@@ -33,27 +33,26 @@ func TestUsageMentionsSearch(t *testing.T) {
 		"search",
 		"Hugging Face",
 		"inspect",
-		"connect",
-		"connect hf",
+		"connect [hf]",
 		"disconnect",
 		"deploy",
 		"gcp",
 		"list",
 		"proxy",
-		"local add",
+		"local",
 		"update",
 		"recommend",
-		"update_limit",
 		"config",
-		"search nlp",
 		"--online",
 		"local index",
 		"upgrade",
-		"deploy it in minutes",
 	} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("usage missing %q\n%s", want, s)
 		}
+	}
+	if strings.Contains(s, "--help-full") {
+		t.Fatalf("bare usage must not suggest --help-full\n%s", s)
 	}
 	for _, drop := range []string{
 		"quickstart",
@@ -64,6 +63,9 @@ func TestUsageMentionsSearch(t *testing.T) {
 		"(serve)",
 		"gpus / import",
 		"aliases:",
+		"update_limit",
+		"search nlp",
+		"local add",
 	} {
 		if strings.Contains(s, drop) {
 			t.Fatalf("usage should not mention %q\n%s", drop, s)

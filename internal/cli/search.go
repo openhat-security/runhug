@@ -76,8 +76,7 @@ func (sf *searchFlagVals) request(query string) searchRequest {
 }
 
 func cmdSearch(args []string) error {
-	if len(args) > 0 && isHelpArg(args[0]) {
-		printSearchHelp(os.Stdout)
+	if showCmdHelp(args, "runhug search", printSearchHelp, printSearchHelpFull) {
 		return nil
 	}
 	fs := newFlagSet("search")
@@ -239,8 +238,11 @@ func yn(b bool) string {
 }
 
 func cmdInspect(args []string) error {
-	if len(args) == 0 || isHelpArg(args[0]) {
+	if len(args) == 0 {
 		printInspectHelp(os.Stdout)
+		return nil
+	}
+	if showCmdHelp(args, "runhug inspect", printInspectHelp, printInspectHelpFull) {
 		return nil
 	}
 	fs := newFlagSet("inspect")

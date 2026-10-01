@@ -37,10 +37,11 @@ func cmdHeretic(args []string) error {
 		return cmdHereticStop(args[1:])
 	case "status":
 		return cmdHereticStatus(args[1:])
-	case "-h", "--help", "help":
-		return hereticHelp()
 	default:
-		return fmt.Errorf("unknown heretic command %q\n%s", args[0], hereticHelpText())
+		if showCmdHelp(args, "runhug heretic", printHereticHelp, printHereticHelpFull) {
+			return nil
+		}
+		return fmt.Errorf("unknown heretic command %q\nRun `runhug heretic --help` or `runhug heretic --help-full`", args[0])
 	}
 }
 
