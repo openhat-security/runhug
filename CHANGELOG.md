@@ -12,6 +12,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `runhug search --index`: upsert the search pool into `models.db` + `packs/<type>.db` with `pack_membership` (deduped by repo id); optional `--share=true|false` or TTY prompt to open a community PR via `gh`.
 - `runhug packs` subcommands: `categories`, `build`, `upsert`, `index` (hfpacks workflow embedded).
 - Expanded release pack set: `vision`, `embeddings` (plus existing text-generation / image / video / audio / gguf).
+- CLI self-update detection: `runhug upgrade` / `runhug update --cli` / `update self` also cover winget, AUR (yay/paru), and `go install` paths.
 
 ### Changed
 - README: in-CLI indexing + community share via `--index` / `--share` (hfpacks remains compatible for standalone builds).

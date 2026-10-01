@@ -61,6 +61,9 @@ runhug search -q "small instruct llm"
 runhug deploy <model> --dry-run --estimate
 runhug deploy <model>         # sampling: recommended / none / customize
 
+runhug upgrade                # CLI via brew/scoop/npm/apt/… (or: update --cli)
+runhug update                 # refresh search index / packs
+
 runhug heretic make <org/model> --dry-run --no-upload
 runhug deploy --provider gcp <gguf-model> --project <id> --dry-run
 runhug gcp dockerfile --model <gguf>   # readonly pager (vim -R / less)

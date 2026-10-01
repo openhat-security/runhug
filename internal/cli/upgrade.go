@@ -19,6 +19,10 @@ import (
 )
 
 func cmdUpgrade(args []string) error {
+	if len(args) > 0 && isHelpArg(args[0]) {
+		printUpgradeHelp(os.Stdout)
+		return nil
+	}
 	fs := newFlagSet("upgrade")
 	check := fs.Bool("check", false, "only report whether a newer release exists")
 	force := fs.Bool("force", false, "reinstall even if already on latest")
@@ -28,10 +32,28 @@ func cmdUpgrade(args []string) error {
 	return upgradeCLI(*check, *force)
 }
 
-func printCLIUpdateHelp(args []string) error {
-	_ = args
-	// Prefer real upgrade; fall back to instructions only on --help-style empty force path.
-	return upgradeCLI(false, false)
+func printUpgradeHelp(w io.Writer) {
+	helpUsage(w, "runhug upgrade")
+	fmt.Fprintln(w, dim("Detect how this binary was installed, then upgrade that way"))
+	fmt.Fprintln(w)
+
+	helpSection(w, "flags")
+	helpFlag(w, "--check", "report only (no install)")
+	helpFlag(w, "--force", "reinstall even if already latest")
+	fmt.Fprintln(w)
+
+	helpSection(w, "methods")
+	fmt.Fprintln(w, dim("  brew → brew upgrade --cask openhat-security/tap/runhug"))
+	fmt.Fprintln(w, dim("  scoop → scoop update runhug"))
+	fmt.Fprintln(w, dim("  winget → winget upgrade --id OpenHatSecurity.Runhug"))
+	fmt.Fprintln(w, dim("  npm → npm install -g runhug@<latest>"))
+	fmt.Fprintln(w, dim("  apt / dnf → sudo apt/dnf upgrade runhug"))
+	fmt.Fprintln(w, dim("  aur → yay/paru -Syu runhug-bin (or pacman -Syu)"))
+	fmt.Fprintln(w, dim("  go → go install github.com/adamsiwiec1/runhug/cmd/runhug@latest"))
+	fmt.Fprintln(w, dim("  github → replace this binary from the latest Release asset"))
+	fmt.Fprintln(w)
+
+	fmt.Fprintf(w, "%s %s\n", dim("alias:"), cyan("runhug update --cli")+" / "+cyan("runhug update self"))
 }
 
 func upgradeCLI(checkOnly, force bool) error {
@@ -58,6 +80,9 @@ func upgradeCLI(checkOnly, force bool) error {
 	fmt.Fprintf(os.Stdout, "Current: %s %s\n", version.Name, version.Version)
 	fmt.Fprintf(os.Stdout, "Latest:  %s\n", latest)
 	fmt.Fprintf(os.Stdout, "Binary:  %s\n", exe)
+
+	method := detectInstallMethod(exe)
+	fmt.Fprintf(os.Stdout, "Install: %s\n", method)
 	fmt.Fprintln(os.Stdout)
 
 	if !force && cur == lat {
@@ -67,25 +92,28 @@ func upgradeCLI(checkOnly, force bool) error {
 	if checkOnly {
 		if cur != lat {
 			fmt.Fprintf(os.Stdout, "%s %s → %s available\n", yellow("update:"), cur, lat)
-			fmt.Fprintln(os.Stdout, dim("Run: runhug upgrade"))
+			fmt.Fprintln(os.Stdout, dim("Run: runhug upgrade   (or: runhug update --cli)"))
 		}
 		return nil
 	}
-
-	method := detectInstallMethod(exe)
-	fmt.Fprintf(os.Stdout, "Install: %s\n\n", method)
 
 	switch method {
 	case "brew":
 		return runUpgradeCmd("brew", "upgrade", "--cask", "openhat-security/tap/runhug")
 	case "scoop":
 		return runUpgradeCmd("scoop", "update", "runhug")
+	case "winget":
+		return runUpgradeCmd("winget", "upgrade", "--id", "OpenHatSecurity.Runhug", "--accept-package-agreements", "--accept-source-agreements")
 	case "npm":
 		return runUpgradeCmd("npm", "install", "-g", "runhug@"+lat)
 	case "apt":
 		return runUpgradeCmd("sudo", "apt-get", "install", "-y", "--only-upgrade", "runhug")
 	case "dnf":
 		return runUpgradeCmd("sudo", "dnf", "upgrade", "-y", "runhug")
+	case "aur":
+		return upgradeAUR()
+	case "go":
+		return runUpgradeCmd("go", "install", "github.com/adamsiwiec1/runhug/cmd/runhug@latest")
 	default:
 		return replaceBinaryFromURL(ctx, exe, assetURL, latest)
 	}
@@ -100,15 +128,78 @@ func detectInstallMethod(exe string) string {
 		return "brew"
 	case strings.Contains(low, "/scoop/apps/runhug/"):
 		return "scoop"
+	case strings.Contains(low, "/winget/packages/") && strings.Contains(low, "openhatsecurity.runhug"):
+		return "winget"
+	case strings.Contains(low, "/microsoft/winget/packages/") && strings.Contains(low, "runhug"):
+		return "winget"
 	case strings.Contains(low, "/node_modules/"):
 		return "npm"
+	case isGoInstallBin(exe):
+		return "go"
 	case strings.HasPrefix(exe, "/usr/bin/runhug") && fileExists("/etc/apt/sources.list.d/runhug.list"):
 		return "apt"
 	case strings.HasPrefix(exe, "/usr/bin/runhug") && fileExists("/etc/yum.repos.d/runhug.repo"):
 		return "dnf"
+	case strings.HasPrefix(exe, "/usr/bin/runhug") && pacmanOwnsRunhug():
+		return "aur"
 	default:
 		return "github"
 	}
+}
+
+func isGoInstallBin(exe string) bool {
+	base := filepath.Base(exe)
+	if base != "runhug" && base != "runhug.exe" {
+		return false
+	}
+	dir := filepath.Clean(filepath.Dir(exe))
+	candidates := goBinDirs()
+	for _, c := range candidates {
+		if c != "" && dir == filepath.Clean(c) {
+			return true
+		}
+	}
+	return false
+}
+
+func goBinDirs() []string {
+	var out []string
+	if gopath := strings.TrimSpace(os.Getenv("GOPATH")); gopath != "" {
+		for _, p := range filepath.SplitList(gopath) {
+			out = append(out, filepath.Join(p, "bin"))
+		}
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		out = append(out, filepath.Join(home, "go", "bin"))
+	}
+	if gobin := strings.TrimSpace(os.Getenv("GOBIN")); gobin != "" {
+		out = append(out, gobin)
+	}
+	return out
+}
+
+func pacmanOwnsRunhug() bool {
+	if _, err := exec.LookPath("pacman"); err != nil {
+		return false
+	}
+	return exec.Command("pacman", "-Q", "runhug-bin").Run() == nil ||
+		exec.Command("pacman", "-Q", "runhug").Run() == nil
+}
+
+func upgradeAUR() error {
+	for _, helper := range []string{"yay", "paru"} {
+		if _, err := exec.LookPath(helper); err == nil {
+			pkg := "runhug-bin"
+			if exec.Command("pacman", "-Q", "runhug").Run() == nil &&
+				exec.Command("pacman", "-Q", "runhug-bin").Run() != nil {
+				pkg = "runhug"
+			}
+			return runUpgradeCmd(helper, "-Syu", "--noconfirm", pkg)
+		}
+	}
+	fmt.Fprintln(os.Stdout, yellow("AUR helper not found (yay/paru)."))
+	fmt.Fprintln(os.Stdout, dim("Update with: yay -Syu runhug-bin   or   paru -Syu runhug-bin"))
+	return fmt.Errorf("aur: install yay or paru, then re-run runhug upgrade")
 }
 
 func brewCaskInstalled() bool {

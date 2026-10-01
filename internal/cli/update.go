@@ -16,7 +16,7 @@ func cmdUpdate(args []string) error {
 	if len(args) > 0 {
 		switch strings.ToLower(args[0]) {
 		case "self", "cli":
-			return printCLIUpdateHelp(args[1:])
+			return cmdUpgrade(args[1:])
 		case "index":
 			args = args[1:]
 		case "packs":
@@ -25,7 +25,7 @@ func cmdUpdate(args []string) error {
 	}
 
 	fs := newFlagSet("update")
-	cliFlag := fs.Bool("cli", false, "print how to upgrade this CLI instead of refreshing the index")
+	cliFlag := fs.Bool("cli", false, "upgrade this CLI via the detected install method (brew/scoop/npm/apt/…)")
 	force := fs.Bool("force", false, "rebuild the local index from scratch (Hub scrape)")
 	packsFlag := fs.Bool("packs", false, "re-download category packs from latest GitHub Release (full replace)")
 	hubOnly := fs.Bool("hub", false, "refresh from Hub API only (ignore pack releases)")
@@ -35,7 +35,7 @@ func cmdUpdate(args []string) error {
 	}
 	updateLimit := config.ResolveUpdateLimit(*limitFlag)
 	if *cliFlag {
-		return printCLIUpdateHelp(nil)
+		return upgradeCLI(false, false)
 	}
 
 	heading(os.Stdout, "Update search index")
