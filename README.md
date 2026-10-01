@@ -76,6 +76,18 @@ runhug start claude           # Claude Code bridge
 runhug start opencode         # OpenCode bridge
 ```
 
+<p align="center">
+  <img src="assets/screenshots/02-runhug-search.png" alt="runhug search" width="100%"/>
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/03-runhug-deploy-dry-run.png" alt="runhug deploy dry-run" width="100%"/>
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/04-runhug-start-claude.gif" alt="runhug start claude" width="100%"/>
+</p>
+
 **RunPod OpenAI bases:** QUEUE `https://api.runpod.ai/v2/{id}/openai/v1` · load balancer `https://{id}.api.runpod.ai/v1`
 
 ## Tips
