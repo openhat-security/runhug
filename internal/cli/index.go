@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -262,7 +263,6 @@ func cmdIndexInfo(args []string) error {
 	indexPath := indexFilePath()
 	bundledPath := bundledIndexPath()
 
-	// Check for user-local index
 	hasLocal := index.Exists(indexPath)
 	hasBundled := bundledPath != "" && index.Exists(bundledPath)
 
@@ -272,73 +272,58 @@ func cmdIndexInfo(args []string) error {
 		return nil
 	}
 
-	// Show user-local index if exists
-	if hasLocal {
-		idx, err := index.Open(indexPath)
-		if err != nil {
-			return fmt.Errorf("open index: %w", err)
-		}
-		defer idx.Close()
-
-		count, err := idx.Count()
-		if err != nil {
-			return fmt.Errorf("count models: %w", err)
-		}
-
-		lastUpdate, err := idx.LastUpdate()
-		if err != nil {
-			return fmt.Errorf("get last update: %w", err)
-		}
-
-		createdAt, _ := idx.GetMetadata("created_at")
-
-		fileInfo, _ := os.Stat(indexPath)
-		sizeKB := fileInfo.Size() / 1024
-
-		heading(os.Stdout, "User-Local Search Index")
-		fmt.Fprintf(os.Stdout, "  %s  %s\n", dim("Path"), indexPath)
-		fmt.Fprintf(os.Stdout, "  %s  %d KB\n", dim("Size"), sizeKB)
-		fmt.Fprintf(os.Stdout, "  %s  %s models\n", dim("Models"), bold(fmt.Sprintf("%d", count)))
-		if createdAt != "" {
-			created, _ := time.Parse(time.RFC3339, createdAt)
-			fmt.Fprintf(os.Stdout, "  %s  %s\n", dim("Created"), formatTime(created))
-		}
-		fmt.Fprintf(os.Stdout, "  %s  %s ago\n", dim("Updated"), formatDuration(time.Since(lastUpdate)))
-		fmt.Fprintln(os.Stdout)
-
-		if time.Since(lastUpdate).Hours() > 24*7 {
-			fmt.Fprintf(os.Stdout, "%s  Index is over a week old\n", yellow("⚠"))
-			fmt.Fprintf(os.Stdout, "   Run: %s\n", cyan("runhug update"))
-			fmt.Fprintln(os.Stdout)
-		}
+	// Prefer the user-local index. Bundled is only for first-run seed / when
+	// the user has not created their own yet.
+	path := indexPath
+	title := "Search Index"
+	if !hasLocal {
+		path = bundledPath
+		title = "Bundled Search Index"
 	}
 
-	// Show bundled index info
-	if hasBundled {
-		idx, err := index.Open(bundledPath)
-		if err == nil {
-			count, _ := idx.Count()
-			lastUpdate, _ := idx.LastUpdate()
-			fileInfo, _ := os.Stat(bundledPath)
-			sizeKB := fileInfo.Size() / 1024
-			idx.Close()
+	idx, err := index.Open(path)
+	if err != nil {
+		return fmt.Errorf("open index: %w", err)
+	}
+	defer idx.Close()
 
-			if hasLocal {
-				fmt.Fprintln(os.Stdout)
-			}
-			heading(os.Stdout, "Bundled Search Index")
-			fmt.Fprintf(os.Stdout, "  %s  %s\n", dim("Path"), bundledPath)
-			fmt.Fprintf(os.Stdout, "  %s  %d KB\n", dim("Size"), sizeKB)
-			fmt.Fprintf(os.Stdout, "  %s  %s models\n", dim("Models"), bold(fmt.Sprintf("%d", count)))
-			fmt.Fprintf(os.Stdout, "  %s  %s ago\n", dim("Indexed"), formatDuration(time.Since(lastUpdate)))
-			fmt.Fprintln(os.Stdout)
+	count, err := idx.Count()
+	if err != nil {
+		return fmt.Errorf("count models: %w", err)
+	}
 
-			if !hasLocal {
-				fmt.Fprintf(os.Stdout, "%s  Using bundled index (ships with package)\n", dim("ℹ"))
-				fmt.Fprintf(os.Stdout, "   Run %s for latest models\n", cyan("runhug update"))
-				fmt.Fprintln(os.Stdout)
-			}
-		}
+	lastUpdate, err := idx.LastUpdate()
+	if err != nil {
+		return fmt.Errorf("get last update: %w", err)
+	}
+
+	createdAt, _ := idx.GetMetadata("created_at")
+	fileInfo, _ := os.Stat(path)
+	sizeKB := fileInfo.Size() / 1024
+
+	heading(os.Stdout, title)
+	printKV(os.Stdout, "path", path)
+	printKV(os.Stdout, "size", fmt.Sprintf("%d KB", sizeKB))
+	printKV(os.Stdout, "models", bold(fmt.Sprintf("%d", count))+" models")
+	if createdAt != "" {
+		created, _ := time.Parse(time.RFC3339, createdAt)
+		printKV(os.Stdout, "created", formatTime(created))
+	}
+	printKV(os.Stdout, "updated", formatDuration(time.Since(lastUpdate))+" ago")
+	fmt.Fprintln(os.Stdout)
+
+	if err := printIndexBreakdowns(os.Stdout, idx); err != nil {
+		return err
+	}
+
+	if !hasLocal {
+		fmt.Fprintf(os.Stdout, "%s  Using bundled index (ships with package; seeds your first local index)\n", dim("ℹ"))
+		fmt.Fprintf(os.Stdout, "   Run %s for latest models\n", cyan("runhug update"))
+		fmt.Fprintln(os.Stdout)
+	} else if time.Since(lastUpdate).Hours() > 24*7 {
+		fmt.Fprintf(os.Stdout, "%s  Index is over a week old\n", yellow("⚠"))
+		fmt.Fprintf(os.Stdout, "   Run: %s\n", cyan("runhug update"))
+		fmt.Fprintln(os.Stdout)
 	}
 
 	commands(os.Stdout, "Commands:",
@@ -348,6 +333,65 @@ func cmdIndexInfo(args []string) error {
 	)
 
 	return nil
+}
+
+func printIndexBreakdowns(w io.Writer, idx *index.Index) error {
+	sections := []struct {
+		title     string
+		fetch     func() ([]index.CountRow, error)
+		limit     int
+		skipEmpty bool
+	}{
+		{"By library", func() ([]index.CountRow, error) { return idx.CountBy("library_name") }, 12, false},
+		{"By pipeline / type", func() ([]index.CountRow, error) { return idx.CountBy("pipeline_tag") }, 12, false},
+		{"By license", func() ([]index.CountRow, error) { return idx.CountBy("license") }, 10, false},
+		{"By pack category", func() ([]index.CountRow, error) { return idx.MembershipCounts() }, 12, true},
+	}
+	for _, s := range sections {
+		rows, err := s.fetch()
+		if err != nil {
+			return err
+		}
+		if s.skipEmpty && len(rows) == 0 {
+			continue
+		}
+		fmt.Fprintln(w, bold(s.title))
+		if len(rows) == 0 {
+			fmt.Fprintln(w, dim("  (none)"))
+			fmt.Fprintln(w)
+			continue
+		}
+		printCountRows(w, rows, s.limit)
+		fmt.Fprintln(w)
+	}
+	return nil
+}
+
+func printCountRows(w io.Writer, rows []index.CountRow, limit int) {
+	shown := rows
+	var rest int
+	if limit > 0 && len(rows) > limit {
+		shown = rows[:limit]
+		for _, r := range rows[limit:] {
+			rest += r.Count
+		}
+	}
+	labelW := 18
+	for _, r := range shown {
+		if n := len(r.Label); n > labelW && n <= 28 {
+			labelW = n
+		}
+	}
+	for _, r := range shown {
+		label := r.Label
+		if len(label) > 28 {
+			label = truncateRunes(label, 28)
+		}
+		fmt.Fprintf(w, "  %s  %s\n", dim(padRight(label, labelW)), bold(fmt.Sprintf("%d", r.Count)))
+	}
+	if rest > 0 {
+		fmt.Fprintf(w, "  %s  %s\n", dim(padRight("…", labelW)), dim(fmt.Sprintf("+%d in %d more", rest, len(rows)-limit)))
+	}
 }
 
 func indexFilePath() string {

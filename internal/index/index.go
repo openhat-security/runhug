@@ -346,6 +346,69 @@ func (idx *Index) Count() (int, error) {
 	return count, err
 }
 
+// CountRow is one grouped count (label may be empty for unset fields).
+type CountRow struct {
+	Label string
+	Count int
+}
+
+// CountBy groups models by a models table column (library_name, pipeline_tag, license).
+// Empty/NULL values are reported as "(none)". Results are ordered by count DESC.
+func (idx *Index) CountBy(column string) ([]CountRow, error) {
+	allowed := map[string]bool{
+		"library_name": true,
+		"pipeline_tag": true,
+		"license":      true,
+		"author":       true,
+	}
+	if !allowed[column] {
+		return nil, fmt.Errorf("unsupported CountBy column %q", column)
+	}
+	q := fmt.Sprintf(`
+		SELECT COALESCE(NULLIF(TRIM(%s), ''), '(none)') AS label, COUNT(*) AS n
+		FROM models
+		GROUP BY label
+		ORDER BY n DESC, label ASC
+	`, column)
+	rows, err := idx.db.Query(q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CountRow
+	for rows.Next() {
+		var r CountRow
+		if err := rows.Scan(&r.Label, &r.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// MembershipCounts returns pack_membership counts ordered by count DESC.
+func (idx *Index) MembershipCounts() ([]CountRow, error) {
+	rows, err := idx.db.Query(`
+		SELECT pack_id, COUNT(*) AS n
+		FROM pack_membership
+		GROUP BY pack_id
+		ORDER BY n DESC, pack_id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CountRow
+	for rows.Next() {
+		var r CountRow
+		if err := rows.Scan(&r.Label, &r.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // LastUpdate returns the timestamp of the most recent indexed model.
 func (idx *Index) LastUpdate() (time.Time, error) {
 	var ts int64

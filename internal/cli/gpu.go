@@ -86,7 +86,6 @@ func cmdGPUUpdate(args []string) error {
 	}
 
 	heading(os.Stdout, "Update GPU catalogs")
-	fmt.Fprintln(os.Stdout, dim("Shipped with the CLI; updates land in ~/.config/runhug/gpudb/ (same idea as model index packs)."))
 	fmt.Fprintln(os.Stdout)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
@@ -97,17 +96,36 @@ func cmdGPUUpdate(args []string) error {
 	}
 	if opts.NVIDIA {
 		printKV(os.Stdout, "nvidia", fmt.Sprintf("%d SKUs from %s", res.NVIDIACount, res.NVIDIAFrom))
+		printGPUDelta(os.Stdout, res.NVIDIAAdded)
 	}
 	if opts.AMD {
 		printKV(os.Stdout, "amd", fmt.Sprintf("%d SKUs from %s", res.AMDCount, res.AMDFrom))
+		printGPUDelta(os.Stdout, res.AMDAdded)
 	}
 	if opts.GCP {
 		printKV(os.Stdout, "gcp", fmt.Sprintf("%d accelerators from %s", res.GCPCount, res.GCPFrom))
+		printGPUDelta(os.Stdout, res.GCPAdded)
 	}
 	printKV(os.Stdout, "cache", res.CacheDir)
 	fmt.Fprintln(os.Stdout)
 	fmt.Fprintln(os.Stdout, dim("List: runhug gpu list --query MI300   or   --filter local"))
 	return nil
+}
+
+func printGPUDelta(w io.Writer, added []string) {
+	indent := dim(padRight("", 9))
+	if len(added) == 0 {
+		fmt.Fprintf(w, "  %s  %s\n", indent, dim("no new GPUs"))
+		return
+	}
+	const maxShow = 12
+	shown := added
+	suffix := ""
+	if len(added) > maxShow {
+		shown = added[:maxShow]
+		suffix = fmt.Sprintf(" (+%d more)", len(added)-maxShow)
+	}
+	fmt.Fprintf(w, "  %s  %s\n", indent, fmt.Sprintf("%d added: %s%s", len(added), strings.Join(shown, ", "), suffix))
 }
 
 func cmdGPUList(args []string) error {

@@ -40,6 +40,9 @@ type UpdateResult struct {
 	AMDFrom     string
 	GCPFrom     string
 	CacheDir    string
+	NVIDIAAdded []string
+	AMDAdded    []string
+	GCPAdded    []string
 }
 
 // Update refreshes cached catalogs under CacheDir.
@@ -54,11 +57,12 @@ func Update(ctx context.Context, opts UpdateOptions) (UpdateResult, error) {
 	res := UpdateResult{CacheDir: dir}
 
 	if opts.NVIDIA {
-		n, src, err := updateVendor(ctx, updateVendorOpts{
+		n, src, added, err := updateVendor(ctx, updateVendorOpts{
 			PreferRelease: opts.PreferRelease,
 			ReleaseAsset:  releaseAssetNVIDIA,
 			FetchURL:      NVIDIAFetchURL,
 			CacheName:     nvidiaCache,
+			Embed:         nvidiaJSON,
 			Vendor:        "nvidia",
 			Trim:          TrimNVIDIA,
 			Label:         "huggingface:Jr23xd23/gpu-database/nvidia",
@@ -66,14 +70,15 @@ func Update(ctx context.Context, opts UpdateOptions) (UpdateResult, error) {
 		if err != nil {
 			return res, err
 		}
-		res.NVIDIACount, res.NVIDIAFrom = n, src
+		res.NVIDIACount, res.NVIDIAFrom, res.NVIDIAAdded = n, src, added
 	}
 	if opts.AMD {
-		n, src, err := updateVendor(ctx, updateVendorOpts{
+		n, src, added, err := updateVendor(ctx, updateVendorOpts{
 			PreferRelease: opts.PreferRelease,
 			ReleaseAsset:  releaseAssetAMD,
 			FetchURL:      AMDFetchURL,
 			CacheName:     amdCache,
+			Embed:         amdJSON,
 			Vendor:        "amd",
 			Trim:          TrimAMD,
 			Label:         "huggingface:Jr23xd23/gpu-database/amd",
@@ -81,14 +86,14 @@ func Update(ctx context.Context, opts UpdateOptions) (UpdateResult, error) {
 		if err != nil {
 			return res, err
 		}
-		res.AMDCount, res.AMDFrom = n, src
+		res.AMDCount, res.AMDFrom, res.AMDAdded = n, src, added
 	}
 	if opts.GCP {
-		n, src, err := updateGCP(ctx, opts.PreferRelease)
+		n, src, added, err := updateGCP(ctx, opts.PreferRelease)
 		if err != nil {
 			return res, err
 		}
-		res.GCPCount, res.GCPFrom = n, src
+		res.GCPCount, res.GCPFrom, res.GCPAdded = n, src, added
 	}
 	return res, nil
 }
@@ -98,12 +103,14 @@ type updateVendorOpts struct {
 	ReleaseAsset  string
 	FetchURL      string
 	CacheName     string
+	Embed         []byte
 	Vendor        string
 	Trim          func([]Spec) []Spec
 	Label         string
 }
 
-func updateVendor(ctx context.Context, o updateVendorOpts) (int, string, error) {
+func updateVendor(ctx context.Context, o updateVendorOpts) (int, string, []string, error) {
+	prev := loadSpecNames(o.CacheName, o.Embed)
 	var raw []byte
 	var src string
 	if o.PreferRelease {
@@ -114,13 +121,13 @@ func updateVendor(ctx context.Context, o updateVendorOpts) (int, string, error) 
 	if raw == nil {
 		b, err := httpGet(ctx, o.FetchURL)
 		if err != nil {
-			return 0, "", fmt.Errorf("fetch %s index: %w", o.Vendor, err)
+			return 0, "", nil, fmt.Errorf("fetch %s index: %w", o.Vendor, err)
 		}
 		raw, src = b, o.Label
 	}
 	var full []Spec
 	if err := json.Unmarshal(raw, &full); err != nil {
-		return 0, "", fmt.Errorf("decode %s JSON: %w", o.Vendor, err)
+		return 0, "", nil, fmt.Errorf("decode %s JSON: %w", o.Vendor, err)
 	}
 	trimmed := o.Trim(full)
 	if len(trimmed) == 0 {
@@ -139,16 +146,17 @@ func updateVendor(ctx context.Context, o updateVendorOpts) (int, string, error) 
 	})
 	out, err := json.Marshal(trimmed)
 	if err != nil {
-		return 0, "", err
+		return 0, "", nil, err
 	}
 	out = append(out, '\n')
 	if err := WriteCache(o.CacheName, out); err != nil {
-		return 0, "", err
+		return 0, "", nil, err
 	}
-	return len(trimmed), src, nil
+	return len(trimmed), src, diffNewNames(prev, specNames(trimmed)), nil
 }
 
-func updateGCP(ctx context.Context, preferRelease bool) (int, string, error) {
+func updateGCP(ctx context.Context, preferRelease bool) (int, string, []string, error) {
+	prev := loadGCPNames()
 	var raw []byte
 	var src string
 
@@ -157,13 +165,13 @@ func updateGCP(ctx context.Context, preferRelease bool) (int, string, error) {
 		merged := mergeGCPLive(live)
 		out, err := json.Marshal(merged)
 		if err != nil {
-			return 0, "", err
+			return 0, "", nil, err
 		}
 		out = append(out, '\n')
 		if err := WriteCache(gcpCache, out); err != nil {
-			return 0, "", err
+			return 0, "", nil, err
 		}
-		return len(merged), "gcloud+bundled", nil
+		return len(merged), "gcloud+bundled", diffNewNames(prev, gcpNames(merged)), nil
 	}
 
 	if preferRelease {
@@ -183,17 +191,82 @@ func updateGCP(ctx context.Context, preferRelease bool) (int, string, error) {
 	}
 	var list []GCPAccelerator
 	if err := json.Unmarshal(raw, &list); err != nil {
-		return 0, "", fmt.Errorf("decode GCP JSON: %w", err)
+		return 0, "", nil, fmt.Errorf("decode GCP JSON: %w", err)
 	}
 	out, err := json.Marshal(list)
 	if err != nil {
-		return 0, "", err
+		return 0, "", nil, err
 	}
 	out = append(out, '\n')
 	if err := WriteCache(gcpCache, out); err != nil {
-		return 0, "", err
+		return 0, "", nil, err
 	}
-	return len(list), src, nil
+	return len(list), src, diffNewNames(prev, gcpNames(list)), nil
+}
+
+func loadSpecNames(cacheName string, embed []byte) map[string]struct{} {
+	var specs []Spec
+	if raw, err := readCache(cacheName); err == nil && len(raw) > 0 {
+		_ = json.Unmarshal(raw, &specs)
+	}
+	if len(specs) == 0 && len(embed) > 0 {
+		_ = json.Unmarshal(embed, &specs)
+	}
+	return nameSet(specNames(specs))
+}
+
+func loadGCPNames() map[string]struct{} {
+	list, _ := LoadGCP()
+	return nameSet(gcpNames(list))
+}
+
+func specNames(specs []Spec) []string {
+	out := make([]string, 0, len(specs))
+	for _, s := range specs {
+		if n := strings.TrimSpace(s.Name); n != "" {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func gcpNames(list []GCPAccelerator) []string {
+	out := make([]string, 0, len(list))
+	for _, g := range list {
+		n := strings.TrimSpace(g.Name)
+		if n == "" {
+			n = strings.TrimSpace(g.ID)
+		}
+		if n != "" {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func nameSet(names []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		out[n] = struct{}{}
+	}
+	return out
+}
+
+func diffNewNames(prev map[string]struct{}, next []string) []string {
+	var added []string
+	seen := map[string]struct{}{}
+	for _, n := range next {
+		if _, ok := prev[n]; ok {
+			continue
+		}
+		if _, dup := seen[n]; dup {
+			continue
+		}
+		seen[n] = struct{}{}
+		added = append(added, n)
+	}
+	sort.Strings(added)
+	return added
 }
 
 func fetchReleaseAsset(ctx context.Context, name string) ([]byte, error) {

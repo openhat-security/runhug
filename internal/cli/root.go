@@ -146,7 +146,7 @@ func printUsage(w io.Writer) {
 	helpCmd(w, "config get|set", "no_color, update_limit, advisor_*")
 	fmt.Fprintln(w)
 
-	fmt.Fprintf(w, "%s %s\n", dim("new here?"), cyan("wizard"))
+	fmt.Fprintf(w, "%s %s\n", dim("new here? use"), cyan("runhug wizard"))
 }
 
 func newFlagSet(name string) *flag.FlagSet {

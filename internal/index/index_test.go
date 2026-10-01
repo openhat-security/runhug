@@ -114,3 +114,49 @@ func TestPackMembershipAndPipelineTags(t *testing.T) {
 		t.Fatalf("pipeline OR: %d %v", len(got), err)
 	}
 }
+
+func TestCountByAndMembership(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "models.db")
+	idx, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer idx.Close()
+
+	models := []hf.Model{
+		{ID: "a/1", LibraryName: "transformers", PipelineTag: "text-generation", Tags: []string{"license:mit"}},
+		{ID: "a/2", LibraryName: "gguf", PipelineTag: "text-generation", Tags: []string{"license:apache-2.0"}},
+		{ID: "a/3", LibraryName: "transformers", PipelineTag: "text-to-image", Tags: []string{"license:mit"}},
+	}
+	for _, m := range models {
+		if err := idx.InsertModel(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := idx.AddMembership("a/1", "text-generation"); err != nil {
+		t.Fatal(err)
+	}
+	if err := idx.AddMembership("a/3", "text-to-image"); err != nil {
+		t.Fatal(err)
+	}
+
+	libs, err := idx.CountBy("library_name")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(libs) != 2 || libs[0].Label != "transformers" || libs[0].Count != 2 {
+		t.Fatalf("libs=%+v", libs)
+	}
+	pipes, err := idx.CountBy("pipeline_tag")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pipes) != 2 {
+		t.Fatalf("pipes=%+v", pipes)
+	}
+	packs, err := idx.MembershipCounts()
+	if err != nil || len(packs) != 2 {
+		t.Fatalf("packs=%+v err=%v", packs, err)
+	}
+}
