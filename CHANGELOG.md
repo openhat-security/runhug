@@ -7,6 +7,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-02
+
 ### Changed
 - **Producer/consumer split:** Hub crawl / pack build / csv·parquet export live in [hfpacks](https://github.com/openhat-security/hfpacks). `runhug packs` only installs, lists, and removes packs from **openhat-security/hfpacks** Releases (`RUNHUG_PACKS_REPO` override still works).
 - Removed in-CLI `packs build` / `upsert` / `index` / `hfpacks` exec bridge, `search --index`/`--share`, Hub mass-crawl `update`/`index-setup`/`index-update`, and the release-index-packs workflow (moved to hfpacks).
