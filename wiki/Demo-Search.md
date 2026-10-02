@@ -4,23 +4,33 @@ Index packs, local search, recommend shortlist, and inspect a card.
 
 ![Search demo](https://raw.githubusercontent.com/openhat-security/runhug/main/assets/screenshots/search.gif)
 
-**Tape source:** [`assets/search.tape`](https://github.com/openhat-security/runhug/blob/main/assets/search.tape) · **MP4:** [`search.mp4`](https://raw.githubusercontent.com/openhat-security/runhug/main/assets/screenshots/search.mp4)
+## Try it yourself
 
-## Re-record
-
-```bash
-make demo-vhs TAPE=search
-```
-
-## Commands shown
+### 1. Packs and index
 
 ```bash
 runhug packs list
+runhug packs install          # if anything is missing
 runhug index
+```
+
+### 2. Local search
+
+```bash
 runhug search -q 'small instruct' --limit 5
 runhug search aero --type llm --limit 5
+```
+
+### 3. Recommend and size
+
+```bash
 runhug recommend 'small instruct for a laptop' --no-llm --candidates 5
 runhug recommend gpu Qwen/Qwen2.5-0.5B-Instruct
+```
+
+### 4. Inspect a model
+
+```bash
 runhug inspect Qwen/Qwen2.5-0.5B-Instruct
 ```
 

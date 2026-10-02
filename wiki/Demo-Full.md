@@ -4,19 +4,49 @@ Combines quickstart → search → deploy → heretic → run in one reel.
 
 ![Full tour demo](https://raw.githubusercontent.com/openhat-security/runhug/main/assets/screenshots/runhug-demo.gif)
 
-**Tape source:** [`assets/full.tape`](https://github.com/openhat-security/runhug/blob/main/assets/full.tape) · **MP4:** [`runhug-demo.mp4`](https://raw.githubusercontent.com/openhat-security/runhug/main/assets/screenshots/runhug-demo.mp4)
+## Try it yourself
 
-## Re-record
+Follow each section in order (or open the linked demo for more detail).
+
+### 1. Setup — [Quickstart](Demo-Quickstart)
 
 ```bash
-make demo-vhs TAPE=full
+runhug version
+runhug wizard --yes
+runhug packs list
+runhug packs install
 ```
 
-## Commands shown
+### 2. Search — [Search](Demo-Search)
 
 ```bash
-make demo-vhs TAPE=full
-# or: vhs assets/full.tape
+runhug search -q 'small instruct' --limit 5
+runhug recommend 'small instruct for a laptop' --no-llm --candidates 5
+runhug inspect Qwen/Qwen2.5-0.5B-Instruct
+```
+
+### 3. Deploy — [Deploy](Demo-Deploy)
+
+```bash
+runhug gpu list --filter runpod --sort value --limit 6
+runhug deploy Qwen/Qwen2.5-0.5B-Instruct --dry-run --estimate
+runhug gcp
+```
+
+### 4. Heretic — [Heretic](Demo-Heretic)
+
+```bash
+runhug heretic
+runhug heretic make Qwen/Qwen2.5-0.5B-Instruct --dry-run --no-upload
+```
+
+### 5. Run — [Run](Demo-Run)
+
+```bash
+runhug local setup
+runhug run --help
+runhug start claude --no-launch --yes
+runhug proxy --help
 ```
 
 ← [All demos](Demos) · [Setup](Setup)
