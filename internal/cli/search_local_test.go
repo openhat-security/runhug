@@ -140,7 +140,7 @@ func TestSearchModelsMissingIndexSuggestsUpdate(t *testing.T) {
 		t.Fatal("expected error")
 	}
 	msg := err.Error()
-	for _, want := range []string{"runhug update", "runhug init", "--online", "--hub"} {
+	for _, want := range []string{"runhug packs install", "runhug init", "--online", "--hub"} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("missing %q in %q", want, msg)
 		}

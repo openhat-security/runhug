@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -9,255 +8,8 @@ import (
 	"time"
 
 	"github.com/adamsiwiec1/runhug/internal/config"
-	"github.com/adamsiwiec1/runhug/internal/hf"
 	"github.com/adamsiwiec1/runhug/internal/index"
 )
-
-func cmdIndexSetup(args []string) error {
-	fs := newFlagSet("index-setup")
-	force := fs.Bool("force", false, "rebuild index even if it exists")
-	if err := parseFlags(fs, args); err != nil {
-		return err
-	}
-
-	indexPath := indexFilePath()
-	if index.Exists(indexPath) && !*force {
-		fmt.Fprintf(os.Stderr, "%s  Index already exists at %s\n", yellow("⚠"), indexPath)
-		fmt.Fprintf(os.Stderr, "   Use --force to rebuild, or run: %s\n", cyan("runhug update"))
-		return nil
-	}
-
-	fmt.Fprintf(os.Stderr, "%s Setting up local search index...\n", bold("⚡"))
-	fmt.Fprintf(os.Stderr, "   This will fetch model metadata from Hugging Face API\n")
-	fmt.Fprintf(os.Stderr, "   (this may take 2-3 minutes)\n\n")
-
-	// Remove existing index if --force
-	if *force && index.Exists(indexPath) {
-		if err := os.Remove(indexPath); err != nil {
-			return fmt.Errorf("remove existing index: %w", err)
-		}
-	}
-
-	idx, err := index.Open(indexPath)
-	if err != nil {
-		return fmt.Errorf("open index: %w", err)
-	}
-	defer idx.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-
-	client := hf.New(config.Load().HFToken)
-
-	// Fetch models using multiple strategies to get diverse coverage
-	var totalModels int
-	startTime := time.Now()
-	seenModels := make(map[string]bool)
-
-	// Strategy 1: Most downloaded models
-	fmt.Fprintf(os.Stderr, "\r📥 Fetching popular models (downloads)... %d fetched", totalModels)
-	models, err := client.Search(ctx, hf.SearchOpts{
-		Task:  "text-generation",
-		Sort:  "downloads",
-		Limit: 100,
-	})
-	if err != nil {
-		return fmt.Errorf("fetch by downloads: %w", err)
-	}
-	for _, m := range models {
-		if !seenModels[m.RepoID()] {
-			if err := idx.InsertModel(m); err == nil {
-				seenModels[m.RepoID()] = true
-				totalModels++
-			}
-		}
-	}
-	time.Sleep(300 * time.Millisecond)
-
-	// Strategy 2: Most liked models
-	fmt.Fprintf(os.Stderr, "\r📥 Fetching popular models (likes)... %d fetched", totalModels)
-	models, err = client.Search(ctx, hf.SearchOpts{
-		Task:  "text-generation",
-		Sort:  "likes",
-		Limit: 100,
-	})
-	if err != nil {
-		return fmt.Errorf("fetch by likes: %w", err)
-	}
-	for _, m := range models {
-		if !seenModels[m.RepoID()] {
-			if err := idx.InsertModel(m); err == nil {
-				seenModels[m.RepoID()] = true
-				totalModels++
-			}
-		}
-	}
-	time.Sleep(300 * time.Millisecond)
-
-	// Strategy 3: GGUF models
-	fmt.Fprintf(os.Stderr, "\r📥 Fetching GGUF models... %d fetched", totalModels)
-	models, err = client.Search(ctx, hf.SearchOpts{
-		Task:   "text-generation",
-		Filter: "gguf",
-		Sort:   "downloads",
-		Limit:  100,
-	})
-	if err == nil {
-		for _, m := range models {
-			if !seenModels[m.RepoID()] {
-				if err := idx.InsertModel(m); err == nil {
-					seenModels[m.RepoID()] = true
-					totalModels++
-				}
-			}
-		}
-	}
-	time.Sleep(300 * time.Millisecond)
-
-	// Strategy 4: Safetensors models
-	fmt.Fprintf(os.Stderr, "\r📥 Fetching Safetensors models... %d fetched", totalModels)
-	models, err = client.Search(ctx, hf.SearchOpts{
-		Task:   "text-generation",
-		Filter: "safetensors",
-		Sort:   "downloads",
-		Limit:  100,
-	})
-	if err == nil {
-		for _, m := range models {
-			if !seenModels[m.RepoID()] {
-				if err := idx.InsertModel(m); err == nil {
-					seenModels[m.RepoID()] = true
-					totalModels++
-				}
-			}
-		}
-	}
-	time.Sleep(300 * time.Millisecond)
-
-	// Strategy 5: Search for common model families and use cases
-	keywords := []string{
-		"llama", "qwen", "mistral", "phi", "gemma", "deepseek", "yi",
-		"coder", "code", "instruct", "chat", "math", "reasoning",
-		"uncensored", "roleplay", "creative", "cyber", "medical",
-	}
-	for _, keyword := range keywords {
-		fmt.Fprintf(os.Stderr, "\r📥 Fetching %s models... %d fetched", keyword, totalModels)
-		models, err = client.Search(ctx, hf.SearchOpts{
-			Query: keyword,
-			Task:  "text-generation",
-			Sort:  "downloads",
-			Limit: 100,
-		})
-		if err == nil {
-			for _, m := range models {
-				if !seenModels[m.RepoID()] {
-					if err := idx.InsertModel(m); err == nil {
-						seenModels[m.RepoID()] = true
-						totalModels++
-					}
-				}
-			}
-		}
-		time.Sleep(300 * time.Millisecond)
-	}
-
-	fmt.Fprintf(os.Stderr, "\r")
-
-	// Store metadata
-	idx.SetMetadata("created_at", time.Now().Format(time.RFC3339))
-	idx.SetMetadata("last_update", time.Now().Format(time.RFC3339))
-
-	elapsed := time.Since(startTime)
-	fileInfo, _ := os.Stat(indexPath)
-	sizeKB := fileInfo.Size() / 1024
-
-	fmt.Fprintf(os.Stderr, "%s Indexed %s models in %s\n", green("✓"), bold(fmt.Sprintf("%d", totalModels)), elapsed.Round(time.Second))
-	fmt.Fprintf(os.Stderr, "%s Saved to %s (%d KB)\n\n", green("✓"), indexPath, sizeKB)
-	fmt.Fprintf(os.Stderr, "Now you can search instantly with: %s\n", cyan("runhug search -q \"...\""))
-
-	return nil
-}
-
-func cmdIndexUpdate(args []string) error {
-	fs := newFlagSet("index-update")
-	limitFlag := fs.Int("limit", -1, "Hub delta upsert cap (0=unlimited; default 2000)")
-	if err := parseFlags(fs, args); err != nil {
-		return err
-	}
-	updateLimit := config.ResolveUpdateLimit(*limitFlag)
-
-	indexPath := indexFilePath()
-	if !index.Exists(indexPath) {
-		fmt.Fprintf(os.Stderr, "%s  No index found. Run: %s\n", yellow("⚠"), cyan("runhug update"))
-		return nil
-	}
-
-	idx, err := index.Open(indexPath)
-	if err != nil {
-		return fmt.Errorf("open index: %w", err)
-	}
-	defer idx.Close()
-
-	lastUpdate, err := idx.Watermark()
-	if err != nil {
-		return fmt.Errorf("get watermark: %w", err)
-	}
-
-	fmt.Fprintf(os.Stderr, "%s Updating index (watermark: %s ago)...\n",
-		bold("⚡"), formatDuration(time.Since(lastUpdate)))
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-
-	client := hf.New(config.Load().HFToken)
-	startTime := time.Now()
-	since := int64(0)
-	if !lastUpdate.IsZero() {
-		since = lastUpdate.Unix()
-	}
-
-	fmt.Fprintf(os.Stderr, "📥 Fetching models modified since watermark...\n")
-	models, err := client.ListModels(ctx, hf.ListOpts{
-		Task:      "text-generation",
-		Sort:      "lastModified",
-		Limit:     updateLimit,
-		PageSize:  100,
-		Sleep:     150 * time.Millisecond,
-		SinceUnix: since,
-		Full:      true,
-	})
-	if err != nil {
-		return fmt.Errorf("fetch models: %w", err)
-	}
-	models = filterHubDeltaModels(idx, models)
-
-	var totalUpdated int
-	var maxLM time.Time
-	for _, m := range models {
-		if err := idx.InsertModel(m); err != nil {
-			fmt.Fprintf(os.Stderr, "%s  Failed to update %s: %v\n", red("✗"), m.ID, err)
-			continue
-		}
-		totalUpdated++
-		if m.LastModified != "" {
-			if t, err := time.Parse(time.RFC3339, m.LastModified); err == nil && t.After(maxLM) {
-				maxLM = t
-			}
-		}
-	}
-
-	now := time.Now().UTC().Format(time.RFC3339)
-	_ = idx.SetMetadata("last_update", now)
-	if !maxLM.IsZero() {
-		_ = idx.SetMetadata("watermark", maxLM.UTC().Format(time.RFC3339))
-	}
-
-	elapsed := time.Since(startTime)
-	fmt.Fprintf(os.Stderr, "%s Updated %s models in %s\n",
-		green("✓"), bold(fmt.Sprintf("%d", totalUpdated)), elapsed.Round(time.Second))
-
-	return nil
-}
 
 func cmdIndexInfo(args []string) error {
 	indexPath := indexFilePath()
@@ -268,7 +20,7 @@ func cmdIndexInfo(args []string) error {
 
 	if !hasLocal && !hasBundled {
 		fmt.Fprintf(os.Stderr, "%s  No index found\n", yellow("⚠"))
-		fmt.Fprintf(os.Stderr, "   Run: %s to create your own index\n", cyan("runhug update"))
+		fmt.Fprintf(os.Stderr, "   Run: %s to install packs from hfpacks Releases\n", cyan("runhug packs install"))
 		return nil
 	}
 
@@ -318,18 +70,18 @@ func cmdIndexInfo(args []string) error {
 
 	if !hasLocal {
 		fmt.Fprintf(os.Stdout, "%s  Using bundled index (ships with package; seeds your first local index)\n", dim("ℹ"))
-		fmt.Fprintf(os.Stdout, "   Run %s for latest models\n", cyan("runhug update"))
+		fmt.Fprintf(os.Stdout, "   Run %s for latest models\n", cyan("runhug packs install"))
 		fmt.Fprintln(os.Stdout)
 	} else if time.Since(lastUpdate).Hours() > 24*7 {
 		fmt.Fprintf(os.Stdout, "%s  Index is over a week old\n", yellow("⚠"))
-		fmt.Fprintf(os.Stdout, "   Run: %s\n", cyan("runhug update"))
+		fmt.Fprintf(os.Stdout, "   Run: %s\n", cyan("runhug update --packs"))
 		fmt.Fprintln(os.Stdout)
 	}
 
 	commands(os.Stdout, "Commands:",
 		"runhug search -q \"...\"",
-		"runhug update",
-		"runhug update --force",
+		"runhug packs install",
+		"runhug update --packs",
 	)
 
 	return nil
@@ -404,8 +156,6 @@ func indexFilePath() string {
 }
 
 func bundledIndexPath() string {
-	// Try multiple locations for bundled index
-
 	// 1. Relative to executable (production: bin/runhug -> ../data/models.db)
 	exePath, err := os.Executable()
 	if err == nil {

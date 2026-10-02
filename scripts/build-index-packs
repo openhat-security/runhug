@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-# Build category SQLite index packs (same as: go run ./cmd/build-index-packs …).
-set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT"
-exec go run ./cmd/build-index-packs "$@"

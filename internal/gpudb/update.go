@@ -270,7 +270,7 @@ func diffNewNames(prev map[string]struct{}, next []string) []string {
 }
 
 func fetchReleaseAsset(ctx context.Context, name string) ([]byte, error) {
-	rc := packs.NewReleaseClient(packs.ReleaseRepo())
+	rc := packs.NewReleaseClient(packs.CLIRepo())
 	if tok := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); tok != "" {
 		rc.Token = tok
 	}

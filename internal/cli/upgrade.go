@@ -232,7 +232,7 @@ func runUpgradeCmd(name string, args ...string) error {
 }
 
 func latestCLIAsset(ctx context.Context) (tag, downloadURL string, err error) {
-	repo := packs.ReleaseRepo()
+	repo := packs.CLIRepo()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/repos/"+repo+"/releases/latest", nil)
 	if err != nil {
 		return "", "", err

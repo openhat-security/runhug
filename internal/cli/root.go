@@ -44,10 +44,12 @@ func Run(args []string) error {
 		return cmdUpdate(rest)
 	case "upgrade":
 		return cmdUpgrade(rest)
-	case "index-setup":
-		return cmdIndexSetup(rest)
-	case "index-update":
-		return cmdIndexUpdate(rest)
+	case "index-setup", "index-update":
+		fmt.Fprintln(os.Stderr, dim("Hub crawl moved to hfpacks. Install packs with:"))
+		fmt.Fprintln(os.Stderr, "  "+cyan("runhug packs install"))
+		fmt.Fprintln(os.Stderr, "  "+cyan("runhug update --packs"))
+		fmt.Fprintln(os.Stderr, dim("Producer: https://github.com/openhat-security/hfpacks"))
+		return fmt.Errorf("%s is retired — use runhug packs install / update --packs", cmd)
 	case "index-info", "index":
 		return cmdIndexInfo(rest)
 	case "deploy":
@@ -123,7 +125,7 @@ func printUsage(w io.Writer, withDetails ...bool) {
 
 	helpSection(w, "search")
 	helpCmd(w, "search [query]", "local index (add --online for Hub)")
-	helpCmd(w, "packs", "category index packs")
+	helpCmd(w, "packs", "install index packs (from hfpacks Releases)")
 	helpCmd(w, "recommend [query]", "shortlist models")
 	helpCmd(w, "recommend gpu <model>", "GPU / VRAM for a model")
 	helpCmd(w, "inspect <model>", "card, VRAM, cheaper options")
@@ -134,6 +136,7 @@ func printUsage(w io.Writer, withDetails ...bool) {
 	helpSection(w, "deploy")
 	helpCmd(w, "deploy <model>", "RunPod serverless (vLLM)")
 	helpCmd(w, "gcp", "GCP Spot GPUs")
+	helpCmd(w, "heretic wizard", "guided abliteration")
 	helpCmd(w, "heretic make <model>", "abliteration training")
 	helpCmd(w, "list", "show deployments")
 	helpCmd(w, "proxy", "OpenAI proxy on :8080")

@@ -31,6 +31,8 @@ func cmdHeretic(args []string) error {
 	switch args[0] {
 	case "make", "train", "run", "launch":
 		return cmdHereticMake(args[1:])
+	case "wizard", "guide", "guided":
+		return cmdHereticWizard(args[1:])
 	case "logs":
 		return cmdHereticLogs(args[1:])
 	case "stop":
@@ -56,6 +58,7 @@ func printHereticHelp(w io.Writer) {
 	fmt.Fprintln(w)
 
 	helpSection(w, "commands")
+	helpCmd(w, "wizard", "guided abliteration walkthrough")
 	helpCmd(w, "make <model>", "create training pod + follow progress")
 	helpCmd(w, "train", "alias for make")
 	helpCmd(w, "logs <model>", "tail training log")

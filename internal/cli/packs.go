@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/adamsiwiec1/runhug/internal/config"
-	"github.com/adamsiwiec1/runhug/internal/hf"
 	"github.com/adamsiwiec1/runhug/internal/index"
 	"github.com/adamsiwiec1/runhug/internal/packs"
 )
@@ -20,8 +18,8 @@ import (
 func promptPackCategories(yes bool) ([]string, error) {
 	cats := packs.DefaultCategories()
 	fmt.Fprintln(os.Stdout, bold("Index category packs"))
-	fmt.Fprintln(os.Stdout, dim("Download curated SQLite packs from GitHub Releases (merged into models.db)."))
-	fmt.Fprintln(os.Stdout, dim("v1 packs are top-N / samples per category; structure supports growing."))
+	fmt.Fprintln(os.Stdout, dim("Download curated SQLite packs from openhat-security/hfpacks Releases (merged into models.db)."))
+	fmt.Fprintln(os.Stdout, dim("Override source with RUNHUG_PACKS_REPO=owner/name if needed."))
 	fmt.Fprintln(os.Stdout)
 	for i, c := range cats {
 		extra := c.Pipeline
@@ -128,7 +126,7 @@ func installPackCategories(ctx context.Context, ids []string) error {
 	fmt.Fprintf(os.Stderr, "%s Fetching pack manifest from github.com/%s …\n", bold("⚡"), rc.Repo)
 	manifest, tag, err := rc.FetchManifest(ctx)
 	if err != nil {
-		return fmt.Errorf("fetch pack manifest: %w\nHint: publish index packs on a release, or run update without packs (Hub refresh)", err)
+		return fmt.Errorf("fetch pack manifest: %w\nHint: publish index packs on openhat-security/hfpacks Releases (see hfpacks CI)", err)
 	}
 	fmt.Fprintf(os.Stderr, "%s Release %s (%d packs in manifest)\n", green("✓"), tag, len(manifest.Packs))
 
@@ -216,9 +214,9 @@ func copyFile(src, dst string) error {
 	return os.WriteFile(dst, data, 0644)
 }
 
-// updateInstalledPacks refreshes installed categories via delta asset, Hub
-// incremental fetch, or full pack replace (--packs).
-func updateInstalledPacks(ctx context.Context, forcePacks bool, updateLimit int) error {
+// updateInstalledPacks refreshes installed categories from hfpacks Releases
+// (optional delta asset, else full pack replace). No Hub crawl.
+func updateInstalledPacks(ctx context.Context, forcePacks bool) error {
 	instPath, err := packs.InstalledPath()
 	if err != nil {
 		return err
@@ -229,7 +227,7 @@ func updateInstalledPacks(ctx context.Context, forcePacks bool, updateLimit int)
 	}
 	ids := inst.SelectedIDs()
 	if len(ids) == 0 {
-		return fmt.Errorf("no packs installed — run: runhug init")
+		return fmt.Errorf("no packs installed — run: runhug packs install")
 	}
 
 	idxPath := indexFilePath()
@@ -243,23 +241,42 @@ func updateInstalledPacks(ctx context.Context, forcePacks bool, updateLimit int)
 	if tok := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); tok != "" {
 		rc.Token = tok
 	}
-	hfClient := hf.New(config.Load().HFToken)
 
-	var total int
+	manifest, tag, err := rc.FetchManifest(ctx)
+	if err != nil {
+		return fmt.Errorf("fetch pack manifest: %w", err)
+	}
+
+	total := 0
+	skipped := 0
 	for _, id := range ids {
-		n, err := updateOneCategory(ctx, idx, inst, rc, hfClient, id, forcePacks, updateLimit)
+		n, upToDate, err := updateOneCategory(ctx, idx, inst, rc, manifest, tag, id, forcePacks)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s  %s: %v\n", yellow("⚠"), id, err)
 			continue
 		}
+		if upToDate {
+			skipped++
+			continue
+		}
 		total += n
 	}
-	_ = idx.SetMetadata("last_update", time.Now().UTC().Format(time.RFC3339))
+	if total > 0 {
+		_ = idx.SetMetadata("last_update", time.Now().UTC().Format(time.RFC3339))
+	}
 	if err := packs.SaveInstalled(instPath, inst); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "%s Updated %s model rows across %d categories\n",
-		green("✓"), bold(fmt.Sprintf("%d", total)), len(ids))
+	if total == 0 && skipped == len(ids) {
+		fmt.Fprintf(os.Stderr, "%s All %d packs up to date (%s)\n", green("✓"), len(ids), tag)
+		return nil
+	}
+	fmt.Fprintf(os.Stderr, "%s Updated %s model rows across %d categories",
+		green("✓"), bold(fmt.Sprintf("%d", total)), len(ids)-skipped)
+	if skipped > 0 {
+		fmt.Fprintf(os.Stderr, " (%d already current)", skipped)
+	}
+	fmt.Fprintln(os.Stderr)
 	return nil
 }
 
@@ -268,148 +285,91 @@ func updateOneCategory(
 	idx *index.Index,
 	inst *packs.Installed,
 	rc *packs.ReleaseClient,
-	hfClient *hf.Client,
-	id string,
+	manifest *packs.Manifest,
+	tag, id string,
 	forcePacks bool,
-	updateLimit int,
-) (int, error) {
+) (n int, upToDate bool, err error) {
+	info, ok := manifest.FindPack(id)
+	if !ok {
+		return 0, false, fmt.Errorf("pack %q missing from release %s", id, tag)
+	}
 	entry := inst.Categories[id]
-	wmStr := entry.Watermark
-	if wmStr == "" {
-		wmStr, _ = idx.GetMetadata(packs.MetadataKeyWatermark(id))
+	if !forcePacks && installedPackCurrent(entry, tag, info) {
+		fmt.Fprintf(os.Stderr, "%s %s: up to date (%s)\n", green("✓"), id, tag)
+		return 0, true, nil
 	}
 
 	if forcePacks {
-		return replacePackFromRelease(ctx, idx, inst, rc, id)
+		n, err = refreshPackFromRelease(ctx, idx, inst, rc, tag, id, info, true)
+		return n, false, err
 	}
 
-	// Prefer delta asset when present
 	deltaPath := filepath.Join(os.TempDir(), "runhug-"+id+"-delta.jsonl")
-	ok, err := rc.TryDownloadDelta(ctx, id, deltaPath)
+	okDelta, err := rc.TryDownloadDelta(ctx, id, deltaPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s  delta check %s: %v\n", dim("·"), id, err)
-	} else if ok {
+	} else if okDelta {
 		defer os.Remove(deltaPath)
 		n, newWM, err := packs.ApplyDeltaJSONL(idx, deltaPath)
 		if err != nil {
-			return 0, err
+			return 0, false, err
 		}
 		if newWM != "" {
 			entry.Watermark = newWM
 		}
+		entry.SourceRelease = tag
+		entry.SHA256 = info.SHA256
+		entry.Rows = info.Rows
 		inst.Categories[id] = entry
 		_ = idx.SetMetadata(packs.MetadataKeyWatermark(id), entry.Watermark)
-		fmt.Fprintf(os.Stderr, "%s %s: applied delta (%d rows)\n", green("✓"), id, n)
-		return n, nil
+		fmt.Fprintf(os.Stderr, "%s %s: applied delta (%d rows upserted)\n", green("✓"), id, n)
+		return n, false, nil
 	}
 
-	// Incremental Hub fetch since watermark
-	cat, ok := packs.LookupCategory(id)
-	if !ok {
-		return 0, fmt.Errorf("unknown category %q", id)
-	}
-	since := int64(0)
-	if wmStr != "" {
-		if t, err := time.Parse(time.RFC3339, wmStr); err == nil {
-			since = t.Unix()
-		}
-	}
-	fmt.Fprintf(os.Stderr, "📥 %s: Hub delta since %s…\n", id, dash(wmStr))
-
-	pipelines := []string{}
-	if cat.Pipeline != "" {
-		pipelines = append(pipelines, cat.Pipeline)
-	}
-	pipelines = append(pipelines, cat.ExtraPipelines...)
-	if len(pipelines) == 0 {
-		pipelines = []string{""}
-	}
-
-	var models []hf.Model
-	seen := map[string]bool{}
-	for _, task := range pipelines {
-		batch, err := hfClient.ListModels(ctx, hf.ListOpts{
-			Task:      task,
-			Filter:    cat.Filter,
-			Sort:      "lastModified",
-			Limit:     updateLimit,
-			PageSize:  100,
-			Sleep:     200 * time.Millisecond,
-			SinceUnix: since,
-			Full:      true,
-		})
-		if err != nil {
-			return 0, err
-		}
-		for _, m := range batch {
-			rid := m.RepoID()
-			if rid == "" || seen[rid] {
-				continue
-			}
-			seen[rid] = true
-			models = append(models, m)
-		}
-	}
-	models = filterHubDeltaModels(idx, models)
-	n, maxLM, err := packs.UpsertModels(idx, models)
-	if err != nil {
-		return n, err
-	}
-	if !maxLM.IsZero() {
-		entry.Watermark = maxLM.UTC().Format(time.RFC3339)
-		_ = idx.SetMetadata(packs.MetadataKeyWatermark(id), entry.Watermark)
-	}
-	inst.Categories[id] = entry
-	fmt.Fprintf(os.Stderr, "%s %s: upserted %d from Hub\n", green("✓"), id, n)
-	return n, nil
+	n, err = refreshPackFromRelease(ctx, idx, inst, rc, tag, id, info, false)
+	return n, false, err
 }
 
-// filterHubDeltaModels keeps all existing ids (metadata refresh) and only
-// admits NEW models that meet MinLikes≥3 and MinDownloads≥100.
-func filterHubDeltaModels(idx *index.Index, models []hf.Model) []hf.Model {
-	const minLikes = 3
-	const minDownloads int64 = 100
-	out := make([]hf.Model, 0, len(models))
-	for _, m := range models {
-		rid := m.RepoID()
-		if rid == "" {
-			continue
-		}
-		exists, err := idx.HasModel(rid)
-		if err == nil && exists {
-			out = append(out, m)
-			continue
-		}
-		if m.Likes < minLikes || m.Downloads < minDownloads {
-			continue
-		}
-		out = append(out, m)
+func installedPackCurrent(entry packs.InstalledPack, releaseTag string, info packs.PackInfo) bool {
+	if releaseTag == "" || info.SHA256 == "" {
+		return false
 	}
-	return out
+	if entry.SourceRelease != releaseTag {
+		return false
+	}
+	return strings.EqualFold(entry.SHA256, info.SHA256)
 }
 
-func replacePackFromRelease(
+func refreshPackFromRelease(
 	ctx context.Context,
 	idx *index.Index,
 	inst *packs.Installed,
 	rc *packs.ReleaseClient,
-	id string,
+	tag, id string,
+	info packs.PackInfo,
+	forceDownload bool,
 ) (int, error) {
-	manifest, tag, err := rc.FetchManifest(ctx)
-	if err != nil {
-		return 0, err
-	}
-	info, ok := manifest.FindPack(id)
-	if !ok {
-		return 0, fmt.Errorf("pack %q missing from release %s", id, tag)
-	}
 	packPath, err := packs.PackDBPath(id)
 	if err != nil {
 		return 0, err
 	}
-	fmt.Fprintf(os.Stderr, "📥 Replacing pack %s from %s…\n", id, tag)
-	if err := rc.DownloadPack(ctx, info, packPath); err != nil {
-		return 0, err
+	needDownload := forceDownload
+	if !needDownload && info.SHA256 != "" {
+		if err := packs.VerifySHA256(packPath, info.SHA256); err != nil {
+			needDownload = true
+		}
+	} else if !forceDownload {
+		if _, err := os.Stat(packPath); err != nil {
+			needDownload = true
+		}
+	}
+	if needDownload {
+		fmt.Fprintf(os.Stderr, "📥 Downloading %s (%s)…\n", id, tag)
+		if err := rc.DownloadPack(ctx, info, packPath); err != nil {
+			return 0, err
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "%s Merging %s from local cache…\n", dim("·"), id)
 	}
 	n, wm, err := packs.MergePackDBWithID(idx, packPath, id)
 	if err != nil {
@@ -425,6 +385,6 @@ func replacePackFromRelease(
 	entry.Rows = info.Rows
 	inst.Categories[id] = entry
 	_ = idx.SetMetadata(packs.MetadataKeyWatermark(id), wm)
-	fmt.Fprintf(os.Stderr, "%s %s: merged %d rows from release pack\n", green("✓"), id, n)
+	fmt.Fprintf(os.Stderr, "%s %s: upserted %d rows into search index\n", green("✓"), id, n)
 	return n, nil
 }
