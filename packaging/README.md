@@ -7,6 +7,7 @@ Release channels for runhug. Tagged releases (`v*`) are built by GoReleaser
 |--------|-------------------|--------|
 | GitHub Release | `scripts/install.sh` / `install.ps1` | bare binaries + `.deb` / `.rpm` |
 | Homebrew | `brew install --cask openhat-security/tap/runhug` | `openhat-security/homebrew-tap` (Cask) |
+| Homebrew (hfpacks) | `brew install --cask openhat-security/tap/hfpacks` | pack builder CLI (separate repo) |
 | apt | `curl …/install-apt.sh \| sudo bash` | Pages repo `openhat-security/packages` |
 | dnf | `curl …/install-dnf.sh \| sudo bash` | same Pages repo |
 | pacman / AUR | `yay -S runhug-bin` | [`aur/`](aur/) (publish to AUR once) |
