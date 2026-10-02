@@ -15,12 +15,12 @@ type Category struct {
 
 // TypeSpec is a broad --type bucket or Hub pipeline alias.
 type TypeSpec struct {
-	ID         string
-	Title      string
-	Pipelines  []string // Hub pipeline_tag values (OR)
-	Filter     string   // Hub filter= (e.g. gguf)
-	Aliases    []string // alternate --type / lookup names
-	ReleasePack bool    // included in DefaultCategories / release builds
+	ID          string
+	Title       string
+	Pipelines   []string // Hub pipeline_tag values (OR)
+	Filter      string   // Hub filter= (e.g. gguf)
+	Aliases     []string // alternate --type / lookup names
+	ReleasePack bool     // included in DefaultCategories / release builds
 }
 
 // catalog is the shared type taxonomy for search --type and pack builds.
@@ -28,8 +28,8 @@ func catalog() []TypeSpec {
 	return []TypeSpec{
 		{
 			ID: "text-generation", Title: "Text Generation (LLMs)",
-			Pipelines: []string{"text-generation"},
-			Aliases:   []string{"llm", "llms", "text-to-text", "chat"},
+			Pipelines:   []string{"text-generation"},
+			Aliases:     []string{"llm", "llms", "text-to-text", "chat"},
 			ReleasePack: true,
 		},
 		{
@@ -185,7 +185,7 @@ func ResolveTypeAndTask(typeID, task string) (pipelines []string, filter string,
 
 	pipes, filt, ok := ExpandType(typeID)
 	if !ok {
-		return nil, "", "unknown --type " + typeID + " (try: runhug packs categories)"
+		return nil, "", "unknown --type " + typeID + " (try: runhug packs list)"
 	}
 	if task == "" || task == "any" || task == "auto" {
 		return pipes, filt, ""
@@ -219,6 +219,19 @@ func CategoryFromType(id string) (Category, bool) {
 		return Category{}, false
 	}
 	return typeToCategory(t), true
+}
+
+// MatchLabel describes Hub pipelines / filters for a category (list / help).
+func MatchLabel(c Category) string {
+	if c.Filter != "" {
+		return "filter=" + c.Filter
+	}
+	parts := make([]string, 0, 1+len(c.ExtraPipelines))
+	if c.Pipeline != "" {
+		parts = append(parts, c.Pipeline)
+	}
+	parts = append(parts, c.ExtraPipelines...)
+	return strings.Join(parts, "+")
 }
 
 // CategoryIDs returns stable release-pack ids in default order.

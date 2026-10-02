@@ -86,61 +86,38 @@ runhug start opencode         # OpenCode bridge
 - Other commands: `inspect`, `recommend gpu`, `update`, `gpu list|set|clear|update`, `list`, `local …`, `config get|set`.
 - Env: `RUNPOD_API_KEY`, `HF_TOKEN`, `RUNHUG_CONFIG`, `NO_COLOR`, `PAGER`.
 
-**Record the demo GIF:** `brew install vhs && make demo-vhs` → `assets/screenshots/runhug-demo.{gif,mp4}` (`demos/runhug.tape`).
+**Record the demo GIF:** `brew install vhs && make demo-vhs` → `assets/screenshots/runhug-demo.{gif,mp4}` (`assets/runhug.tape`).
 
-## Build your own model index
+## Model index packs
 
-`runhug init` / `update --packs` installs **community category index packs** from [GitHub Releases](https://github.com/openhat-security/runhug/releases). You can also build and contribute packs from the CLI (or via standalone [hfpacks](https://github.com/openhat-security/hfpacks)).
-
-### Search by type and index locally
-
-`--task` is an **exact** Hub `pipeline_tag`. `--type` is a **broad** pack bucket (expands to one or more pipelines, or `filter=gguf`).
+`runhug init` / `runhug packs install` / `runhug packs update` installs **category
+SQLite index packs** from
+[openhat-security/hfpacks Releases](https://github.com/openhat-security/hfpacks/releases).
+Pack **production** (Hub crawl, csv/parquet export, release CI) lives in the standalone
+[hfpacks](https://github.com/openhat-security/hfpacks) repo — runhug only downloads and merges.
 
 ```bash
-runhug packs categories              # types + aliases
-runhug search aero --type llm --online --limit 50
-runhug search aero --type llm --online --index          # upsert pool; prompt to share
-runhug search aero --type vision --online --index --share=false
+runhug packs list                       # installed + release + catalog (ids / MATCH)
+runhug packs install llm gguf           # download + merge into ~/.config/runhug/models.db
+runhug packs update                     # refresh installed packs from latest hfpacks Release
+runhug update --packs                   # alias for packs update
+
+runhug search aero --type llm --limit 50
+runhug search qwen --online --engine vllm   # live Hub (optional; set HF_TOKEN)
 ```
 
-`--index` upserts the search pool into `~/.config/runhug/models.db` and `packs/<type>.db` (no duplicate rows; membership is additive). After indexing, a TTY asks whether to share with the community (`--share=true|false` skips the prompt). Share requires [`gh`](https://cli.github.com/) and opens a PR on `openhat-security/runhug` with `contrib/packs/<type>/` artifacts.
+Override the pack source with `RUNHUG_PACKS_REPO=owner/name` if needed.
 
-### Build a full pack set
+To **build** packs locally (maintainers / heavy crawls):
 
 ```bash
-# preferred: embedded in runhug
-runhug packs build --out dist/index
-runhug packs upsert Qwen/Qwen3-8B --type llm
-
-# or standalone hfpacks (proxy pool)
 git clone https://github.com/openhat-security/hfpacks.git
 cd hfpacks && go build -o bin/hfpacks ./cmd/hfpacks
-export HF_TOKEN=hf_…
-./bin/hfpacks build -out dist/index
+./bin/hfpacks build -out dist/index -format sqlite,csv,parquet
 ```
 
-Output layout:
-
-```
-dist/index/
-  index-manifest.json
-  index-text-generation.db
-  index-vision.db
-  index-text-to-image.db
-  index-video.db
-  index-audio.db
-  index-embeddings.db
-  index-gguf.db
-```
-
-### Share packs with the community
-
-1. **Index or build** (`runhug search … --index` or `runhug packs build` / hfpacks).
-2. **Verify**: `runhug search -q "…" --type …` and `runhug inspect`.
-3. **Share**: accept the post-index prompt, or pass `--share=true` (needs `gh`). Alternately open a manual PR with DBs + manifest or a public download URL.
-4. **Maintainers** publish Release assets so `init` / `update --packs` pick them up.
-
-Prefer Releases (or an external URL) over committing multi‑hundred‑MB binaries to `main`. Questions: [Discussions](https://github.com/openhat-security/runhug/discussions).
+Prefer Releases over committing multi‑hundred‑MB binaries to `main`. Questions:
+[Discussions](https://github.com/openhat-security/runhug/discussions).
 
 ## License & contributing
 

@@ -176,3 +176,56 @@ func TestDateTimeFormat(t *testing.T) {
 		t.Errorf("dateTime() = %q, want HH:MM:SS", got)
 	}
 }
+func TestHereticWizardChecklist(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	var buf bytes.Buffer
+	if err := hereticWizardChecklist(&buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"Heretic wizard",
+		"runhug connect",
+		"runhug connect hf",
+		"heretic make",
+		"--dry-run",
+		"heretic wizard",
+		"Never auto-creates",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("checklist missing %q\n%s", want, out)
+		}
+	}
+}
+
+func TestHereticWizardCommandYes(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	if err := Run([]string{"heretic", "wizard", "--yes"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHereticHelpMentionsWizard(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	var buf bytes.Buffer
+	printHereticHelp(&buf)
+	if !strings.Contains(buf.String(), "wizard") {
+		t.Fatalf("heretic --help should list wizard\n%s", buf.String())
+	}
+	var full bytes.Buffer
+	printHereticHelpFull(&full)
+	if !strings.Contains(full.String(), "Interactive walkthrough") {
+		t.Fatalf("heretic --help-full should explain wizard\n%s", full.String())
+	}
+}
+
+func TestHereticMakeArgs(t *testing.T) {
+	opts := hereticWizardOpts{Trials: 50, NoUpload: true, Cloud: "COMMUNITY", GPU: "ADA_24"}
+	got := hereticMakeArgs("Org/M", opts, true, true)
+	joined := strings.Join(got, " ")
+	for _, want := range []string{"Org/M", "--dry-run", "--yes", "--trials", "50", "--cloud", "COMMUNITY", "--no-upload", "--gpu", "ADA_24"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("args missing %q: %v", want, got)
+		}
+	}
+}

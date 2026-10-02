@@ -10,11 +10,11 @@ The CLI automatically uses this bundled index when:
 
 ## Updating
 
-Users can create their own fresh index with:
+Install or refresh category packs from [hfpacks Releases](https://github.com/openhat-security/hfpacks/releases):
 
 ```bash
-# Create/update user-local index with latest models
-runhug update
+runhug packs install
+runhug update --packs
 ```
 
 Once a user-local index exists, it takes precedence over the bundled index.
@@ -23,7 +23,7 @@ Once a user-local index exists, it takes precedence over the bundled index.
 
 1. **User-local index** (`~/.config/runhug/models.db`) — highest priority
 2. **Bundled index** (`data/models.db`) — fallback if no user index
-3. **No index** — search tells you to run `runhug update` (or `init`). It does **not** call the Hub.
+3. **No index** — search tells you to run `runhug packs install` (or `init`). It does **not** call the Hub.
 4. **`--online` / `--hub`** — optional live Hub search (rate-limited; set `HF_TOKEN`)
 
 ## Contents
@@ -34,37 +34,22 @@ Once a user-local index exists, it takes precedence over the bundled index.
 - Coverage: Popular models + model families (Llama, Qwen, Mistral, Phi, Gemma, DeepSeek, Yi) + GGUF + Safetensors
 - Updated: Periodically with package releases
 
-## Building
-
-To rebuild the bundled index:
-
-```bash
-# From repo root
-./bin/runhug update --force
-cp ~/.config/runhug/models.db data/models.db
-git add data/models.db
-git commit -m "Update bundled search index"
-```
-
-## Benefits
-
-✅ Instant search (no network, no setup required)
-✅ Offline capable (works without HF API)
-✅ Privacy (no API calls for search)
-✅ Small footprint (~100 KB)
-✅ Users can still get latest models via `update`
-
-
 ## Category packs (GitHub Releases)
 
-Large category databases are **not** committed here. They are built by
-`cmd/build-index-packs` and attached to releases as:
+Large category databases are **not** committed here. They are built and published by
+[openhat-security/hfpacks](https://github.com/openhat-security/hfpacks)
+(CI: `release-index-packs.yml`) and attached to **hfpacks** releases as:
 
 - `index-manifest.json`
 - `index-<category>.db`
 
-`runhug init` downloads selected packs, verifies `sha256`, keeps copies
+`runhug packs install` / `init` downloads selected packs, verifies `sha256`, keeps copies
 under `~/.config/runhug/packs/`, and merges into `models.db`.
 
-v1 packs are capped with `RUNHUG_INDEX_LIMIT` (default 5000 rows/category) so
-CI stays practical; the manifest/schema support larger packs later.
+`runhug packs list` shows local vs remote (✓/✗), indexed rows, Hub≈ totals, coverage %,
+and remaining (from manifest `hub_total` when present).
+
+Override with `RUNHUG_PACKS_REPO`. Optional exports (csv/parquet) are produced by hfpacks
+for non-runhug consumers; runhug only installs SQLite.
+
+**Never** attach `index-*.db` to openhat-security/runhug Releases — packs ship only from hfpacks.

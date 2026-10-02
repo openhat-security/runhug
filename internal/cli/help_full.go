@@ -45,13 +45,13 @@ func printUsageFull(w io.Writer) {
 			Cmd:  "search [query]",
 			What: "Search the local SQLite index for models. Default never hits the Hub.",
 			When: "Everyday model discovery. Add --online / --hub for live Hub results.",
-			More: "Useful flags: -q/--query, --type (llm, vision, image, …), --engine, --license,\n  --sort likes|downloads, --limit, --index (upsert hits into your local index).",
+			More: "Useful flags: -q/--query, --type (llm, vision, image, …), --engine, --license,\n  --sort likes|downloads, --limit.",
 		},
 		helpFullEntry{
 			Cmd:  "packs",
-			What: "Build, download, list, or upsert category index packs (llm, vision, gguf, …).",
-			When: "Growing or rebuilding the local index beyond a Hub delta update.",
-			More: "See: runhug packs categories · runhug packs --help",
+			What: "Install, list, or remove category index packs from hfpacks Releases.",
+			When: "Growing or refreshing the local index (producer: openhat-security/hfpacks).",
+			More: "See: runhug packs install · runhug packs --help",
 		},
 		helpFullEntry{
 			Cmd:  "recommend [query]",
@@ -97,10 +97,10 @@ func printUsageFull(w io.Writer) {
 			More: "Also: deploy --provider gcp <gguf-model>. See runhug gcp --help.",
 		},
 		helpFullEntry{
-			Cmd:  "heretic make <model>",
-			What: "Spin up an abliteration training pod + dashboard; optional Hub upload.",
+			Cmd:  "heretic wizard | make <model>",
+			What: "Guided abliteration walkthrough, or create a training pod + dashboard (+ optional Hub upload).",
 			When: "You want an abliterated variant of an instruct model.",
-			More: "Needs RunPod (+ HF token if uploading). Try --dry-run --no-upload first.",
+			More: "Needs RunPod (+ HF token if uploading). Try heretic wizard or make --dry-run --no-upload first.",
 		},
 		helpFullEntry{
 			Cmd:  "list",

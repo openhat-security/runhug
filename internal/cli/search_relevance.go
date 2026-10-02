@@ -35,7 +35,7 @@ type searchMeta struct {
 	RankSource string
 	Queries    []string
 	Notes      string
-	// Pool is the ranked result set before display trim (for --index).
+	// Pool is the ranked result set before display trim.
 	Pool []hf.Model
 	// PackID is the canonical type id when --type was set.
 	PackID string
@@ -51,7 +51,7 @@ var (
 )
 
 func errNoSearchIndex() error {
-	return fmt.Errorf("no local search index found.\nRun `runhug update` or `runhug init` to build one from Hugging Face.\nOr pass --online / --hub for a live Hub search (rate-limited; set HF_TOKEN).")
+	return fmt.Errorf("no local search index found.\nRun `runhug packs install` or `runhug init` to download packs from hfpacks Releases.\nOr pass --online / --hub for a live Hub search (rate-limited; set HF_TOKEN).")
 }
 
 func resolveSearchIndex() (path, source string) {
@@ -217,13 +217,13 @@ func searchIndexAtPath(ctx context.Context, req searchRequest, sortKey string, p
 	}
 
 	filters := index.SearchFilters{
-		Author:  req.Author,
-		Library: req.Library,
-		License: req.License,
-		Engine:  req.Engine,
-		Filter:  req.Filter,
-		Sort:    sortKey,
-		Limit:   100,
+		Author:   req.Author,
+		Library:  req.Library,
+		License:  req.License,
+		Engine:   req.Engine,
+		Filter:   req.Filter,
+		Sort:     sortKey,
+		Limit:    100,
 		PackType: packID,
 	}
 	switch {

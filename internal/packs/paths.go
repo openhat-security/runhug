@@ -9,11 +9,16 @@ import (
 )
 
 const (
-	EnvPacksRepo   = "RUNHUG_PACKS_REPO"
-	EnvIndexLimit  = "RUNHUG_INDEX_LIMIT"
-	DefaultRepo    = "openhat-security/runhug"
-	packsSubdir    = "packs"
-	installedName  = "installed.json"
+	EnvPacksRepo = "RUNHUG_PACKS_REPO"
+	EnvCLIRepo   = "RUNHUG_REPO"
+
+	// DefaultRepo is the pack download source (hfpacks Releases).
+	DefaultRepo = "openhat-security/hfpacks"
+	// DefaultCLIRepo hosts CLI binaries and gpudb release assets.
+	DefaultCLIRepo = "openhat-security/runhug"
+
+	packsSubdir   = "packs"
+	installedName = "installed.json"
 )
 
 // PacksDir is ~/.config/runhug/packs (or under RUNHUG_CONFIG parent).
@@ -43,10 +48,18 @@ func InstalledPath() (string, error) {
 	return filepath.Join(dir, installedName), nil
 }
 
-// ReleaseRepo returns owner/name for pack downloads.
+// ReleaseRepo returns owner/name for pack downloads (hfpacks by default).
 func ReleaseRepo() string {
 	if v := strings.TrimSpace(os.Getenv(EnvPacksRepo)); v != "" {
 		return strings.TrimPrefix(strings.TrimPrefix(v, "https://github.com/"), "/")
 	}
 	return DefaultRepo
+}
+
+// CLIRepo returns owner/name for CLI binary / gpudb release assets.
+func CLIRepo() string {
+	if v := strings.TrimSpace(os.Getenv(EnvCLIRepo)); v != "" {
+		return strings.TrimPrefix(strings.TrimPrefix(v, "https://github.com/"), "/")
+	}
+	return DefaultCLIRepo
 }

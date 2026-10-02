@@ -19,6 +19,10 @@ on:
 permissions:
   contents: write
 
+# NOTE: Category index packs (index-*.db / index-manifest.json) are NOT published
+# from this repo. They are built and released by openhat-security/hfpacks only.
+# runhug packs install / update --packs download from that repo (RUNHUG_PACKS_REPO).
+
 jobs:
   goreleaser:
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.npm_only)

@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"io"
+
+	"github.com/adamsiwiec1/runhug/internal/packs"
 )
 
 // Full help pages for leaf / parent commands that already have short print*Help.
@@ -16,7 +18,7 @@ func printSearchHelpFull(w io.Writer) {
 			Cmd:  "search [query]",
 			What: "Find models by text query against your local index (or live Hub with --online).",
 			When: "Everyday discovery before inspect / deploy / local add.",
-			More: "--type = broad pack bucket (llm, vision, image, …)\n  --task = exact Hub pipeline_tag\n  --online/--hub for live Hub (rate-limited; set HF_TOKEN)\n  --index upserts the result pool into models.db (+ pack membership)",
+			More: "--type = broad pack bucket (llm, vision, image, …)\n  --task = exact Hub pipeline_tag\n  --online/--hub for live Hub (rate-limited; set HF_TOKEN)",
 		},
 	)
 	helpSection(w, "flags")
@@ -27,10 +29,9 @@ func printSearchHelpFull(w io.Writer) {
 	helpFlag(w, "--sort", "relevance (default), likes, or downloads")
 	helpFlag(w, "--limit", "rows to show (1-100)")
 	helpFlag(w, "--author --engine --license", "filters")
-	helpFlag(w, "--index --share", "upsert pool; optional community PR")
 	helpFlag(w, "--verbose -v --json --copy N", "detail / JSON / clipboard")
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "%s %s\n", dim("example:"), cyan(`runhug search aero --type llm --online --index`))
+	fmt.Fprintf(w, "%s %s\n", dim("example:"), cyan(`runhug search aero --type llm`))
 }
 
 func printDeployHelpFull(w io.Writer) {
@@ -136,30 +137,38 @@ func printUpgradeHelpFull(w io.Writer) {
 
 func printPacksHelpFull(w io.Writer) {
 	helpUsage(w, "runhug packs <command>")
-	fmt.Fprintln(w, dim("Category index packs (hfpacks workflow). Short list:"), cyan("runhug packs --help"))
+	fmt.Fprintln(w, dim("Install category packs from hfpacks Releases. Short list:"), cyan("runhug packs --help"))
 	fmt.Fprintln(w)
 	helpFullSection(w, "commands",
 		helpFullEntry{
-			Cmd:  "categories",
-			What: "List --type / pack ids (release packs + Hub pipeline tags).",
-			When: "Discovering valid --type values for search / build.",
+			Cmd:  "list",
+			What: "Show installed packs, hfpacks Release assets, and full category catalog (MATCH column).",
+			When: "See what you have vs what the latest Release offers; discover ids for search --type.",
+			More: "--local only installed · --remote only release assets\n  REL ✓ = on latest Release. Alias: status · categories/types → list",
 		},
 		helpFullEntry{
-			Cmd:  "build",
-			What: "Crawl Hub → index-*.db + manifest (needs HF_TOKEN).",
-			When: "Maintainer / offline pack publishing.",
+			Cmd:  "install [ids…]",
+			What: "Download SQLite packs from github.com/" + packs.ReleaseRepo() + " and merge into models.db.",
+			When: "First-time setup, or to add missing categories.",
+			More: "No ids → interactive numbered picker (default: missing).\n  --yes installs all. Override repo: RUNHUG_PACKS_REPO=owner/name",
 		},
 		helpFullEntry{
-			Cmd:  "upsert <org/model>…",
-			What: "Fetch named models into a pack / models.db.",
-			When: "Adding specific repos without a full crawl.",
+			Cmd:  "update",
+			What: "Re-download and merge packs you already installed from the latest hfpacks Release.",
+			When: "After a new hfpacks Release; same as runhug update --packs.",
+			More: "--force full pack replace instead of delta when available.",
 		},
 		helpFullEntry{
-			Cmd:  "index --from-search <q>",
-			What: "Search Hub/local and upsert the pool (same idea as search --index).",
-			When: "Growing the local index from a query.",
+			Cmd:  "remove [ids…]",
+			What: "Delete local pack DB copies and installed.json entries.",
+			When: "Freeing disk or dropping a category.",
+			More: "No ids → interactive picker among installed. --yes removes all.",
 		},
 	)
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, dim("Produce packs (crawl Hub, csv/parquet export):"))
+	fmt.Fprintln(w, "  "+cyan("https://github.com/openhat-security/hfpacks"))
+	fmt.Fprintln(w, dim("Packs are never published on openhat-security/runhug Releases."))
 }
 
 func printGCPHelpFull(w io.Writer) {
@@ -202,6 +211,12 @@ func printHereticHelpFull(w io.Writer) {
 	fmt.Fprintln(w, dim("Abliteration training on RunPod. Short list:"), cyan("runhug heretic --help"))
 	fmt.Fprintln(w)
 	helpFullSection(w, "commands",
+		helpFullEntry{
+			Cmd:  "wizard",
+			What: "Interactive walkthrough: credentials, model pick, options, dry-run, optional live make.",
+			When: "First heretic run, or when you want prompts instead of flags.",
+			More: "Non-interactive checklist: runhug heretic wizard --yes (never creates a live pod).",
+		},
 		helpFullEntry{
 			Cmd:  "make <model>",
 			What: "Create a training pod, follow progress, optional Hub upload of the abliterated weights.",

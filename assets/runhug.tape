@@ -134,27 +134,19 @@ Type "./bin/runhug packs"
 Enter
 Sleep 1.2s
 
-Type "./bin/runhug packs categories --release"
+Type "./bin/runhug packs list"
 Enter
-Sleep 1s
+Sleep 1.2s
 ScrollUp 12
 Sleep 250ms
 ScrollDown@70ms 14
 Sleep 1.2s
 
-Type "./bin/runhug packs categories | head -20"
-Enter
-Sleep 1.2s
-
-Type "./bin/runhug packs build --help"
+Type "./bin/runhug packs install --help"
 Enter
 Sleep 1s
 
-Type "./bin/runhug packs upsert"
-Enter
-Sleep 1s
-
-Type "./bin/runhug packs index"
+Type "./bin/runhug packs update --help"
 Enter
 Sleep 1s
 
@@ -579,11 +571,11 @@ Type "./bin/runhug index-info || true"
 Enter
 Sleep 1s
 
-Type "./bin/runhug index-setup --help"
+Type "./bin/runhug packs install --help"
 Enter
 Sleep 1s
 
-Type "./bin/runhug index-update --help"
+Type "./bin/runhug update --packs --help"
 Enter
 Sleep 1s
 
