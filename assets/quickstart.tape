@@ -1,8 +1,11 @@
-# runhug quickstart — first-run story: install → packs → search → dry-run deploy.
-# Slow, readable pacing so the setup feels short.
+# runhug quickstart — interactive wizard walkthrough (first-run story).
+# Scripted y/n + model pick; dry-run only (live deploy declined).
 #
 #   make demo-vhs TAPE=quickstart
 #   vhs assets/quickstart.tape
+#
+# Expects a local index (runhug init) and Runpod connected for dry-run.
+# HF can be skipped — demo pastes an open model.
 
 Output assets/screenshots/quickstart.gif
 Output assets/screenshots/quickstart.mp4
@@ -14,7 +17,7 @@ Set Shell "bash"
 Set FontSize 15
 Set Width 1280
 Set Height 800
-Set TypingSpeed 45ms
+Set TypingSpeed 40ms
 Set Theme "Catppuccin Mocha"
 Set Padding 16
 Set BorderRadius 8
@@ -32,60 +35,50 @@ Show
 
 Type "./bin/runhug version"
 Enter
-Sleep 1.5s
+Sleep 1.2s
 
-Type "./bin/runhug"
+Type "./bin/runhug wizard"
 Enter
-Sleep 1.5s
-ScrollUp 40
-Sleep 400ms
-ScrollDown@80ms 45
-Sleep 2s
+Sleep 1.8s
 
-Type "clear"
+# 2) Init — index present → decline re-run
 Enter
-Sleep 400ms
+Sleep 900ms
 
-Type "./bin/runhug wizard --yes"
+# 3) HF — skip (demo uses an open model)
+Type "n"
 Enter
-Sleep 1.5s
-ScrollUp 28
-Sleep 350ms
-ScrollDown@85ms 32
-Sleep 2s
+Sleep 1.2s
 
-Type "./bin/runhug packs list"
+# 4) Runpod — auto-skip when already connected
+# 5) Advisor — keep existing / decline configure
 Enter
-Sleep 2s
-ScrollUp 14
-Sleep 300ms
-ScrollDown@85ms 16
-Sleep 2s
+Sleep 900ms
 
-Type "./bin/runhug search -q 'small instruct' --limit 5 || true"
-Enter
-Sleep 2s
-ScrollUp 16
-Sleep 300ms
-ScrollDown@85ms 18
-Sleep 2s
-
-Type "./bin/runhug inspect Qwen/Qwen2.5-0.5B-Instruct || true"
-Enter
-Sleep 2s
-ScrollUp 30
-Sleep 350ms
-ScrollDown@75ms 35
-Sleep 2s
-
-Type "./bin/runhug deploy Qwen/Qwen2.5-0.5B-Instruct --dry-run --estimate || true"
+# 6) Find a model — use case → shortlist → paste open Qwen
+Type "small instruct"
 Enter
 Sleep 2.5s
-ScrollUp 40
-Sleep 400ms
-ScrollDown@70ms 45
+Type "Qwen/Qwen2.5-0.5B-Instruct"
+Enter
+Sleep 3.5s
+
+# 7) GPU picker — Enter selects recommended
+Enter
+Sleep 5s
+
+# 8) Deploy dry-run (automatic when Runpod connected)
+# 9) Live deploy? — decline (default)
+Sleep 1s
+Enter
+Sleep 1.2s
+
+# 10) Proxy — decline if an endpoint already exists in the registry
+Enter
 Sleep 2.5s
 
-Type "echo '✓ setup → search → dry-run deploy — ready to go'"
-Enter
+# 11) Done — scroll the plan + next commands
+ScrollUp 45
+Sleep 500ms
+ScrollDown@70ms 50
 Sleep 3s

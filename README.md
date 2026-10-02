@@ -9,7 +9,7 @@
 Search Hugging Face, deploy any checkpoint (RunPod serverless vLLM or GCP Spot llama.cpp), then chat via an OpenAI-compatible URL, Claude Code, or OpenCode — including abliterated **heretic** models trained in-CLI.
 
 <p align="center">
-  <img src="assets/screenshots/runhug-demo.gif" alt="runhug CLI dry-run tour" width="100%"/>
+  <img src="assets/screenshots/quickstart.gif" alt="runhug interactive wizard — search, GPU pick, dry-run deploy" width="100%"/>
 </p>
 
 ## Install
@@ -88,7 +88,7 @@ runhug start opencode         # OpenCode bridge
 
 📚 **[Wiki — setup walkthrough + demo tapes](https://github.com/openhat-security/runhug/wiki)**
 
-**Record the demo GIF:** `brew install vhs && make demo-vhs` → `assets/screenshots/runhug-demo.{gif,mp4}` (`assets/runhug.tape`).
+**Record the demo GIF:** `brew install vhs && make demo-vhs TAPE=quickstart` → `assets/screenshots/quickstart.{gif,mp4}` (`assets/quickstart.tape`).
 
 ## Model index packs
 

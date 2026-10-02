@@ -6,7 +6,7 @@ Watch a clip, then run the same steps yourself. Each page has a **Try it yoursel
 
 | Demo | What you’ll do |
 |------|----------------|
-| [Quickstart](Demo-Quickstart) | First-run: wizard → packs → search → dry-run deploy |
+| [Quickstart](Demo-Quickstart) | Interactive wizard: shortlist → GPU pick → dry-run |
 | [Search](Demo-Search) | Packs, search, recommend, inspect |
 | [Deploy](Demo-Deploy) | GPU catalog + RunPod/GCP dry-run |
 | [Heretic](Demo-Heretic) | Abliteration dry-run |
