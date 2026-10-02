@@ -7,7 +7,7 @@ This wiki is the step-by-step companion to the [runhug CLI](https://github.com/o
 ## Start here
 
 1. **[Setup (step by step)](Setup)** — install → credentials → index packs → first search
-2. **[Demos](Demos)** — recorded VHS tours (GIF + how to re-record)
+2. **[Demos](Demos)** — recorded tours + step-by-step commands to try yourself
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/openhat-security/runhug/main/assets/screenshots/quickstart.gif" alt="runhug quickstart demo" width="100%"/>
