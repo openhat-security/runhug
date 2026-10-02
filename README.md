@@ -86,6 +86,8 @@ runhug start opencode         # OpenCode bridge
 - Other commands: `inspect`, `recommend gpu`, `update`, `gpu list|set|clear|update`, `list`, `local …`, `config get|set`.
 - Env: `RUNPOD_API_KEY`, `HF_TOKEN`, `RUNHUG_CONFIG`, `NO_COLOR`, `PAGER`.
 
+📚 **[Wiki — setup walkthrough + demo tapes](https://github.com/openhat-security/runhug/wiki)**
+
 **Record the demo GIF:** `brew install vhs && make demo-vhs` → `assets/screenshots/runhug-demo.{gif,mp4}` (`assets/runhug.tape`).
 
 ## Model index packs
