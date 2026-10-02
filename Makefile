@@ -1,4 +1,7 @@
-.PHONY: help build test test-heretic tidy check build-release release-snapshot release demo-vhs
+.PHONY: help build test test-heretic tidy check build-release release-snapshot release demo-vhs demo-vhs-all
+
+# TAPE=full|quickstart|search|deploy|heretic|run (default: full)
+TAPE ?= full
 
 help:
 	@echo "build              Go binary → bin/runhug"
@@ -8,7 +11,8 @@ help:
 	@echo "build-release      Alias for release-snapshot"
 	@echo "release-snapshot   GoReleaser snapshot (or local cross-build fallback)"
 	@echo "release BUMP=patch  Cut release: bump patch|minor|major, tag, push"
-	@echo "demo-vhs           Record demo GIF+MP4 via charmbracelet/vhs"
+	@echo "demo-vhs           Record one VHS tape (TAPE=full|quickstart|search|deploy|heretic|run)"
+	@echo "demo-vhs-all       Record every tape under assets/*.tape"
 	@echo "check              tests + vet + build"
 	@echo ""
 	@echo "Index packs are built/published by https://github.com/openhat-security/hfpacks"
@@ -34,11 +38,20 @@ check: test
 build-release release-snapshot:
 	bash scripts/build-release.sh
 
-# Record assets/screenshots/runhug-demo.{gif,mp4} (needs: brew install vhs).
+# Record assets/screenshots from assets/$(TAPE).tape (needs: brew install vhs).
 demo-vhs: build
 	@command -v vhs >/dev/null || (echo "install vhs: brew install vhs" >&2; exit 1)
+	@test -f "assets/$(TAPE).tape" || (echo "missing assets/$(TAPE).tape" >&2; exit 1)
 	mkdir -p assets/screenshots
-	vhs assets/runhug.tape
+	vhs "assets/$(TAPE).tape"
+
+demo-vhs-all: build
+	@command -v vhs >/dev/null || (echo "install vhs: brew install vhs" >&2; exit 1)
+	mkdir -p assets/screenshots
+	@for t in quickstart search deploy heretic run full; do \
+		echo "→ vhs assets/$$t.tape"; \
+		vhs "assets/$$t.tape"; \
+	done
 
 # Example: make release BUMP=patch
 # Extra flags: make release BUMP=minor ARGS='--dry-run'

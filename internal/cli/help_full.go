@@ -13,7 +13,6 @@ func printUsageFull(w io.Writer) {
 
 	fmt.Fprintln(w, dim("Full command reference. Short list:"), cyan("runhug --help"))
 	fmt.Fprintln(w)
-	helpUsage(w, "runhug <command> [flags]")
 
 	helpFullSection(w, "setup",
 		helpFullEntry{
@@ -28,15 +27,22 @@ func printUsageFull(w io.Writer) {
 			More: "Flags: --yes skips prompts. Seeds from the bundled index when you have none yet.",
 		},
 		helpFullEntry{
-			Cmd:  "connect [hf]",
-			What: "Save a RunPod API key (default) or Hugging Face token (connect hf).",
-			When: "Before deploy / heretic (RunPod) or gated Hub downloads / uploads (HF).",
-			More: "Tokens are stored under the runhug config dir; env vars also work if set.",
+			Cmd:  "packs",
+			What: "Install, list, update, or remove category index packs from hfpacks Releases.",
+			When: "Growing or refreshing the local index (producer: openhat-security/hfpacks).",
+			More: "See: runhug packs install · runhug packs update · runhug packs --help",
 		},
 		helpFullEntry{
-			Cmd:  "disconnect [hf]",
-			What: "Remove the saved RunPod key or HF token from disk.",
-			When: "Rotating credentials or clearing a machine.",
+			Cmd:  "gpu",
+			What: "Find + set GPU catalog & preference (list, set, clear, show, update).",
+			When: "Picking a pool for deploy, comparing VRAM/price, or saving a default GPU.",
+			More: "Bare runhug gpu shows this help. list|set|update are subcommands.\n  Filters: --filter local|amd|nvidia|runpod|gcp · --query · --sort",
+		},
+		helpFullEntry{
+			Cmd:  "config …",
+			What: "Settings (get/set) and credentials (connect / disconnect).",
+			When: "Toggling color, Hub update limits, advisor URL, or saving RunPod/HF tokens.",
+			More: "runhug config --help · connect [hf] · disconnect [hf]\n  Keys: no_color, update_limit, advisor_base_url, advisor_model\n  Top-level aliases: runhug connect · runhug disconnect",
 		},
 	)
 
@@ -46,12 +52,6 @@ func printUsageFull(w io.Writer) {
 			What: "Search the local SQLite index for models. Default never hits the Hub.",
 			When: "Everyday model discovery. Add --online / --hub for live Hub results.",
 			More: "Useful flags: -q/--query, --type (llm, vision, image, …), --engine, --license,\n  --sort likes|downloads, --limit.",
-		},
-		helpFullEntry{
-			Cmd:  "packs",
-			What: "Install, list, or remove category index packs from hfpacks Releases.",
-			When: "Growing or refreshing the local index (producer: openhat-security/hfpacks).",
-			More: "See: runhug packs install · runhug packs --help",
 		},
 		helpFullEntry{
 			Cmd:  "recommend [query]",
@@ -97,20 +97,9 @@ func printUsageFull(w io.Writer) {
 			More: "Also: deploy --provider gcp <gguf-model>. See runhug gcp --help.",
 		},
 		helpFullEntry{
-			Cmd:  "heretic wizard | make <model>",
-			What: "Guided abliteration walkthrough, or create a training pod + dashboard (+ optional Hub upload).",
-			When: "You want an abliterated variant of an instruct model.",
-			More: "Needs RunPod (+ HF token if uploading). Try heretic wizard or make --dry-run --no-upload first.",
-		},
-		helpFullEntry{
 			Cmd:  "list",
 			What: "Show local deployment registry and provider status.",
 			When: "Finding endpoint IDs, URLs, or what is still running.",
-		},
-		helpFullEntry{
-			Cmd:  "proxy",
-			What: "Local OpenAI-compatible proxy (default 127.0.0.1:8080/v1) in front of a deployment.",
-			When: "Tools expect a local base URL, or you want one stable address across endpoints.",
 		},
 		helpFullEntry{
 			Cmd:  "use / url / status / delete / import",
@@ -119,7 +108,16 @@ func printUsageFull(w io.Writer) {
 		},
 	)
 
-	helpFullSection(w, "chat",
+	helpFullSection(w, "heretic",
+		helpFullEntry{
+			Cmd:  "heretic wizard | make <model>",
+			What: "Guided abliteration walkthrough, or create a training pod + dashboard (+ optional Hub upload).",
+			When: "You want an abliterated variant of an instruct model.",
+			More: "Needs RunPod (+ HF token if uploading). Try heretic wizard or make --dry-run --no-upload first.",
+		},
+	)
+
+	helpFullSection(w, "run",
 		helpFullEntry{
 			Cmd:  "run [model]",
 			What: "Interactive chat REPL against the active (or named) deployment.",
@@ -130,43 +128,16 @@ func printUsageFull(w io.Writer) {
 			What: "Wire Claude Code or OpenCode to your proxy / deployment via env + bridge hints.",
 			When: "Using coding agents against a runhug endpoint.",
 		},
-	)
-
-	helpFullSection(w, "local",
 		helpFullEntry{
 			Cmd:  "local add|start|stop|run|setup",
 			What: "Download and run models on this machine (llama.cpp / mlx / ollama paths).",
 			When: "Offline or free local inference instead of cloud deploy.",
 			More: "See runhug local --help for subcommands.",
 		},
-	)
-
-	helpFullSection(w, "gpu",
 		helpFullEntry{
-			Cmd:  "gpu list",
-			What: "Browse the hardware catalog joined with RunPod / GCP / local detection.",
-			When: "Picking a pool for deploy or comparing VRAM / price.",
-			More: "Filters: --filter local|amd|nvidia|runpod|gcp · --query · --sort",
-		},
-		helpFullEntry{
-			Cmd:  "gpu set|clear|show",
-			What: "Save (or forget) a GPU preference used by deploy / local flows.",
-			When: "You always want the same pool without retyping it.",
-		},
-		helpFullEntry{
-			Cmd:  "gpu update",
-			What: "Refresh NVIDIA, AMD, and GCP catalogs into ~/.config/runhug/gpudb/.",
-			When: "Catalog looks stale, or after new SKUs land upstream.",
-			More: "Reports how many GPUs were added (or “no new GPUs”).",
-		},
-	)
-
-	helpFullSection(w, "config",
-		helpFullEntry{
-			Cmd:  "config [get|set]",
-			What: "Show config dir / settings, or get/set keys.",
-			When: "Toggling color, Hub update limits, or the recommend advisor endpoint.",
-			More: "Keys: no_color, update_limit, advisor_base_url, advisor_model",
+			Cmd:  "proxy",
+			What: "Local OpenAI-compatible proxy (default 127.0.0.1:8080/v1) in front of a deployment.",
+			When: "Tools expect a local base URL, or you want one stable address across endpoints.",
 		},
 	)
 

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -10,6 +11,9 @@ import (
 )
 
 func cmdConfig(args []string) error {
+	if showCmdHelp(args, "runhug config", printConfigHelp, printConfigHelpFull) {
+		return nil
+	}
 	if len(args) == 0 {
 		return printConfigInfo()
 	}
@@ -20,9 +24,59 @@ func cmdConfig(args []string) error {
 		return cmdConfigSet(args[1:])
 	case "path", "paths", "show":
 		return printConfigInfo()
+	case "connect":
+		return cmdConnect(args[1:])
+	case "disconnect":
+		return cmdDisconnect(args[1:])
 	default:
-		return fmt.Errorf("usage: runhug config [get|set] <key> [value]\nKnown keys: no_color, update_limit, advisor_base_url, advisor_model")
+		printConfigHelp(os.Stderr)
+		return fmt.Errorf("unknown config command %q\nRun `runhug config --help`", args[0])
 	}
+}
+
+func printConfigHelp(w io.Writer) {
+	helpUsage(w, "runhug config [command]")
+	helpSection(w, "commands")
+	helpCmd(w, "(none)", "show config dir, credentials status, settings")
+	helpCmd(w, "get <key>", "print one setting")
+	helpCmd(w, "set <key> <value>", "write one setting")
+	helpCmd(w, "connect [hf]", "save RunPod key or HF token")
+	helpCmd(w, "disconnect [hf]", "clear saved credentials")
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "%s %s · %s\n",
+		dim("aliases:"), cyan("runhug connect"), cyan("runhug disconnect"),
+	)
+}
+
+func printConfigHelpFull(w io.Writer) {
+	helpUsage(w, "runhug config [command]")
+	fmt.Fprintln(w, dim("Settings and credentials. Short list:"), cyan("runhug config --help"))
+	fmt.Fprintln(w)
+	helpFullSection(w, "commands",
+		helpFullEntry{
+			Cmd:  "(none) / show / path",
+			What: "Print config dir, RunPod/HF credential status, and current settings.",
+			When: "Checking where tokens live or what update_limit / advisor URL is set.",
+		},
+		helpFullEntry{
+			Cmd:  "get <key> · set <key> <value>",
+			What: "Read or write settings.json keys.",
+			When: "Toggling color, Hub update limits, or the recommend advisor endpoint.",
+			More: "Keys: no_color, update_limit, advisor_base_url, advisor_model",
+		},
+		helpFullEntry{
+			Cmd:  "connect [hf]",
+			What: "Save a RunPod API key (default) or Hugging Face token (connect hf).",
+			When: "Before deploy / heretic (RunPod) or gated Hub downloads (HF).",
+			More: "Also: runhug connect [hf] (top-level alias).",
+		},
+		helpFullEntry{
+			Cmd:  "disconnect [hf]",
+			What: "Remove the saved RunPod key or HF token from disk.",
+			When: "Rotating credentials or clearing a machine.",
+			More: "Also: runhug disconnect [hf] (top-level alias).",
+		},
+	)
 }
 
 func printConfigInfo() error {
@@ -73,12 +127,16 @@ func printConfigInfo() error {
 		printKV(os.Stdout, "advisor_model", "(unset — pass --model or set advisor_model)")
 	}
 	fmt.Fprintln(os.Stdout)
+	commands(os.Stdout, "Credentials:",
+		"runhug config connect",
+		"runhug config connect hf",
+		"runhug config disconnect",
+	)
 	commands(os.Stdout, "Examples:",
 		"runhug config set no_color true",
 		"runhug config set update_limit 5000",
 		"runhug config set advisor_base_url http://127.0.0.1:11434/v1",
 		"runhug config get update_limit",
-		"runhug connect hf",
 	)
 	return nil
 }

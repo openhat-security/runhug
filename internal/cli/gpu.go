@@ -19,7 +19,9 @@ func cmdGPU(args []string) error {
 		return nil
 	}
 	if len(args) == 0 {
-		return cmdGPUList(nil)
+		printGPUHelp(os.Stdout)
+		printHelpDetailsHint(os.Stdout, "runhug gpu")
+		return nil
 	}
 	switch strings.ToLower(args[0]) {
 	case "list", "ls":

@@ -1,5 +1,3 @@
-# Alias of assets/full.tape — prefer make demo-vhs TAPE=full
-
 # runhug full tour — quickstart → search → deploy → heretic → run (in order).
 # Prefer individual tapes for short clips; this is the end-to-end reel.
 #

@@ -7,6 +7,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Root help regrouped: setup (wizard/init/packs/gpu/config), search, deploy, heretic, run (includes local + proxy).
+- Credentials live under `runhug config connect|disconnect` (top-level `connect`/`disconnect` still work as aliases). Bare `runhug gpu` shows GPU help.
+- VHS demos split: `assets/{quickstart,search,deploy,heretic,run,full}.tape` (`make demo-vhs TAPE=…`).
+
 ## [0.4.0] - 2026-10-02
 
 ### Changed

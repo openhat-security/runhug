@@ -72,12 +72,17 @@ func helpSection(w io.Writer, title string) {
 
 // helpCmd prints one help row: cyan command + dim description (aligned).
 func helpCmd(w io.Writer, cmd, desc string) {
+	helpCmdIndent(w, 0, cmd, desc)
+}
+
+func helpCmdIndent(w io.Writer, nest int, cmd, desc string) {
 	const cmdWidth = 26
+	pad := strings.Repeat("  ", nest+1)
 	col := padRight(cmd, cmdWidth)
 	if utf8.RuneCountInString(cmd) >= cmdWidth {
 		col = cmd + "  "
 	}
-	fmt.Fprintf(w, "  %s%s\n", cyan(col), dim(desc))
+	fmt.Fprintf(w, "%s%s%s\n", pad, cyan(col), dim(desc))
 }
 
 // helpFlag prints a flag row (same alignment as helpCmd).

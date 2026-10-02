@@ -49,18 +49,28 @@ func TestPrintUsageIncludesGroupedHelp(t *testing.T) {
 		"setup",
 		"search",
 		"deploy",
+		"heretic",
+		"run",
 		"RunPod",
 		"local",
 		"config",
+		"packs",
+		"gpu",
 		"update",
-		"connect [hf]",
 		"local index",
 		"upgrade",
+		"find + set gpu catalog",
 		"find, deploy, and run",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help missing %q\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "\nchat\n") {
+		t.Fatal("root help should rename chat → run")
+	}
+	if strings.Contains(out, "connect [hf]") {
+		t.Fatal("connect/disconnect belong under runhug config --help, not root help")
 	}
 	if strings.Contains(out, bannerASCII) {
 		t.Fatal("NO_COLOR help must not include banner art")
