@@ -46,7 +46,9 @@ func pickStartModel(registryKey, baseURL, serveModel, apiKeyEnv string, skipProm
 		if len(ids) == 0 {
 			return "", "default", nil
 		}
-		picked, err := pickNumbered("model", ids, formatRemoteModelLine, skipPrompt)
+		picked, err := pickNumbered("model", ids, func(w io.Writer) {
+			printRemoteModelPickTable(w, ids)
+		}, skipPrompt)
 		if err != nil {
 			return "", "", err
 		}
@@ -68,8 +70,8 @@ func pickStartModel(registryKey, baseURL, serveModel, apiKeyEnv string, skipProm
 	for i, e := range entries {
 		labels[i] = e.HFRepo
 	}
-	picked, err := pickNumbered("model", labels, func(i int, id string) string {
-		return formatRegistryEntryLine(i+1, entries[i])
+	picked, err := pickNumbered("model", labels, func(w io.Writer) {
+		printRegistryPickTable(w, entries)
 	}, skipPrompt)
 	if err != nil {
 		return "", "", err
@@ -112,19 +114,20 @@ func usableRegistryEntries(reg *store.Registry) []registryPickEntry {
 	out := make([]registryPickEntry, 0, len(ids))
 	for _, id := range ids {
 		m := reg.Models[id]
-		e := registryPickEntry{HFRepo: m.HFRepo}
-		if m.Kind() == store.BackendLocal {
-			e.Kind = "local"
+		e := registryPickEntry{HFRepo: m.HFRepo, Kind: m.Kind()}
+		switch m.Kind() {
+		case store.BackendLocal:
 			e.Where = m.BaseURL
-			if m.Runtime != "" {
-				e.Extra = m.Runtime
-			}
-		} else {
-			e.Kind = "runpod"
+			e.Extra = m.Runtime
+		case store.BackendGCP:
 			e.Where = m.EndpointID
-			if m.EndpointType != "" {
-				e.Extra = m.EndpointType
+			if e.Where == "" {
+				e.Where = m.BaseURL
 			}
+			e.Extra = m.EndpointType // zone
+		default:
+			e.Where = m.EndpointID
+			e.Extra = m.EndpointType
 		}
 		out = append(out, e)
 	}
@@ -132,26 +135,103 @@ func usableRegistryEntries(reg *store.Registry) []registryPickEntry {
 }
 
 func registryEntryUsable(m store.Model) bool {
-	if m.Kind() == store.BackendLocal {
+	switch m.Kind() {
+	case store.BackendLocal:
 		return strings.TrimSpace(m.BaseURL) != ""
+	case store.BackendGCP:
+		return strings.TrimSpace(m.EndpointID) != "" || strings.TrimSpace(m.BaseURL) != ""
+	default:
+		return strings.TrimSpace(m.EndpointID) != ""
 	}
-	return strings.TrimSpace(m.EndpointID) != ""
 }
 
-func formatRegistryEntryLine(n int, e registryPickEntry) string {
-	line := fmt.Sprintf("%d) %s  %s %s", n, e.HFRepo, e.Kind, e.Where)
-	if e.Extra != "" {
-		line += "  " + e.Extra
+const (
+	pickColNum     = 2
+	pickColModel   = 40
+	pickColBackend = 8
+	pickColWhere   = 28
+	pickColDetail  = 14
+)
+
+func printRegistryPickTable(w io.Writer, entries []registryPickEntry) {
+	fmt.Fprintln(w, bold("Endpoints"))
+	modelW, whereW, detailW := 5, 5, 6 // min = header lengths MODEL/WHERE/DETAIL
+	for _, e := range entries {
+		if n := len(e.HFRepo); n > modelW {
+			modelW = n
+		}
+		if n := len(e.Where); n > whereW {
+			whereW = n
+		}
+		if n := len(e.Extra); n > detailW {
+			detailW = n
+		}
 	}
-	return line
+	if modelW > pickColModel {
+		modelW = pickColModel
+	}
+	if whereW > pickColWhere {
+		whereW = pickColWhere
+	}
+	if detailW > pickColDetail {
+		detailW = pickColDetail
+	}
+	fmt.Fprintf(w, "  %s  %s  %s  %s  %s\n",
+		dim(padRight("#", pickColNum)),
+		dim(padRight("MODEL", modelW)),
+		dim(padRight("BACKEND", pickColBackend)),
+		dim(padRight("WHERE", whereW)),
+		dim(padRight("DETAIL", detailW)),
+	)
+	for i, e := range entries {
+		fmt.Fprintf(w, "  %s  %s  %s  %s  %s\n",
+			cyan(padRight(strconv.Itoa(i+1), pickColNum)),
+			bold(padRight(truncateRunes(e.HFRepo, modelW), modelW)),
+			colorBackend(padRight(truncateRunes(e.Kind, pickColBackend), pickColBackend), e.Kind),
+			dim(padRight(truncateRunes(e.Where, whereW), whereW)),
+			dim(padRight(truncateRunes(e.Extra, detailW), detailW)),
+		)
+	}
+	fmt.Fprintln(w)
 }
 
-func formatRemoteModelLine(i int, id string) string {
-	return fmt.Sprintf("%d) %s", i+1, id)
+func printRemoteModelPickTable(w io.Writer, ids []string) {
+	fmt.Fprintln(w, bold("Models"))
+	modelW := 5
+	for _, id := range ids {
+		if n := len(id); n > modelW {
+			modelW = n
+		}
+	}
+	if modelW > pickColModel {
+		modelW = pickColModel
+	}
+	fmt.Fprintf(w, "  %s  %s\n",
+		dim(padRight("#", pickColNum)),
+		dim(padRight("MODEL", modelW)),
+	)
+	for i, id := range ids {
+		fmt.Fprintf(w, "  %s  %s\n",
+			cyan(padRight(strconv.Itoa(i+1), pickColNum)),
+			bold(padRight(truncateRunes(id, modelW), modelW)),
+		)
+	}
+	fmt.Fprintln(w)
+}
+
+func colorBackend(padded, kind string) string {
+	switch kind {
+	case store.BackendLocal:
+		return cyan(padded)
+	case store.BackendGCP:
+		return yellow(padded)
+	default:
+		return green(padded)
+	}
 }
 
 // pickNumbered prints a 1–N menu and returns the chosen label.
-func pickNumbered(noun string, labels []string, lineFn func(i int, id string) string, skipPrompt bool) (string, error) {
+func pickNumbered(noun string, labels []string, printMenu func(io.Writer), skipPrompt bool) (string, error) {
 	if len(labels) == 0 {
 		return "", fmt.Errorf("no %ss to pick", noun)
 	}
@@ -166,11 +246,7 @@ func pickNumbered(noun string, labels []string, lineFn func(i int, id string) st
 	}
 
 	w := os.Stderr
-	fmt.Fprintln(w, bold("Endpoints"))
-	for i, id := range labels {
-		fmt.Fprintln(w, "  "+lineFn(i, id))
-	}
-	fmt.Fprintln(w)
+	printMenu(w)
 	line, err := readLine(fmt.Sprintf("Pick %s 1-%d: ", noun, len(labels)))
 	if err != nil {
 		return "", err

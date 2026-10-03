@@ -16,24 +16,32 @@ func TestUsableRegistryEntriesFiltersAndOrders(t *testing.T) {
 	reg := &store.Registry{
 		Current: "org/b",
 		Models: map[string]store.Model{
-			"org/a": {HFRepo: "org/a", Backend: store.BackendRunpod, EndpointID: "ep-a"},
+			"org/a": {HFRepo: "org/a", Backend: store.BackendRunpod, EndpointID: "ep-a", EndpointType: "QUEUE"},
 			"org/b": {HFRepo: "org/b", Backend: store.BackendLocal, BaseURL: "http://127.0.0.1:1/v1", Runtime: "ollama"},
-			"org/c": {HFRepo: "org/c", Backend: store.BackendRunpod}, // no endpoint id → skip
+			"org/c": {HFRepo: "org/c", Backend: store.BackendRunpod},                         // no endpoint id → skip
 			"org/d": {HFRepo: "org/d", Backend: store.BackendLocal, GGUFPath: "/tmp/x.gguf"}, // no base_url → skip
+			"org/g": {HFRepo: "org/g", Backend: store.BackendGCP, EndpointID: "vm-1", EndpointType: "us-central1-a", BaseURL: "http://127.0.0.1:8080/v1"},
 		},
 	}
 	got := usableRegistryEntries(reg)
-	if len(got) != 2 {
+	if len(got) != 3 {
 		t.Fatalf("got %d: %+v", len(got), got)
 	}
 	if got[0].HFRepo != "org/b" {
 		t.Fatalf("current should be first: %+v", got)
 	}
-	if got[1].HFRepo != "org/a" || got[1].Kind != "runpod" || got[1].Where != "ep-a" {
-		t.Fatalf("%+v", got[1])
+	byRepo := map[string]registryPickEntry{}
+	for _, e := range got {
+		byRepo[e.HFRepo] = e
 	}
-	if got[0].Kind != "local" || got[0].Where != "http://127.0.0.1:1/v1" {
-		t.Fatalf("%+v", got[0])
+	if e := byRepo["org/a"]; e.Kind != "runpod" || e.Where != "ep-a" || e.Extra != "QUEUE" {
+		t.Fatalf("%+v", e)
+	}
+	if e := byRepo["org/b"]; e.Kind != "local" || e.Where != "http://127.0.0.1:1/v1" || e.Extra != "ollama" {
+		t.Fatalf("%+v", e)
+	}
+	if e := byRepo["org/g"]; e.Kind != "gcp" || e.Where != "vm-1" || e.Extra != "us-central1-a" {
+		t.Fatalf("%+v", e)
 	}
 }
 
@@ -136,11 +144,24 @@ func TestPickStartModelBaseURLListsRemote(t *testing.T) {
 	}
 }
 
-func TestFormatRegistryEntryLine(t *testing.T) {
-	line := formatRegistryEntryLine(1, registryPickEntry{
-		HFRepo: "org/model", Kind: "runpod", Where: "abc", Extra: "loadbalancer",
+func TestPrintRegistryPickTable(t *testing.T) {
+	long := "org/" + strings.Repeat("x", 60)
+	var buf strings.Builder
+	printRegistryPickTable(&buf, []registryPickEntry{
+		{HFRepo: long, Kind: "runpod", Where: "vllm-abc123", Extra: "QUEUE"},
+		{HFRepo: "gemma4:e4b", Kind: "local", Where: "http://127.0.0.1:11434/v1", Extra: "ollama"},
+		{HFRepo: "org/g", Kind: "gcp", Where: "otw-portal-dev", Extra: "us-central1-a"},
 	})
-	if !strings.Contains(line, "1) org/model  runpod abc  loadbalancer") {
-		t.Fatal(line)
+	out := buf.String()
+	for _, want := range []string{"Endpoints", "MODEL", "BACKEND", "WHERE", "DETAIL", "QUEUE", "ollama", "gcp"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q\n%s", want, out)
+		}
+	}
+	if !strings.Contains(out, truncateRunes(long, pickColModel)) {
+		t.Fatalf("long model should truncate\n%s", out)
+	}
+	if strings.Contains(out, long) {
+		t.Fatalf("full long model should not appear\n%s", out)
 	}
 }
