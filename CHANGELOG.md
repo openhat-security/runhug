@@ -7,6 +7,10 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+
+## [0.4.2] - 2026-10-02
+- Cleaned up output for `runhug run`. 
+
 ## [0.4.1] - 2026-10-02
 
 ### Changed
