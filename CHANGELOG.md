@@ -7,6 +7,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-10-03
+
 ### Added
 - `runhug run` / `start` ensure cloud backends are up before chat: GCP starts the Spot VM + SSH tunnel, Runpod waits on workers, with step progress and cold-start ETA. Local ollama is started when needed.
 
