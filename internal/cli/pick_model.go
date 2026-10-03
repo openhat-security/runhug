@@ -120,9 +120,9 @@ func usableRegistryEntries(reg *store.Registry) []registryPickEntry {
 			e.Where = m.BaseURL
 			e.Extra = m.Runtime
 		case store.BackendGCP:
-			e.Where = m.EndpointID
+			e.Where = m.PodID
 			if e.Where == "" {
-				e.Where = m.BaseURL
+				e.Where = m.EndpointID // project fallback
 			}
 			e.Extra = m.EndpointType // zone
 		default:

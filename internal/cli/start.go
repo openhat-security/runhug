@@ -62,10 +62,11 @@ func startClaude(registryKey, baseURL, apiKeyEnv, serveModel string, bridgePort 
 	if err != nil {
 		return err
 	}
-	target, err := ResolveEndpoint(registryKey, baseURL, apiKeyEnv, serveModel)
+	target, cleanup, err := resolveReadyEndpoint(registryKey, baseURL, apiKeyEnv, serveModel, noLaunch)
 	if err != nil {
 		return err
 	}
+	defer cleanup()
 	target.BaseURL = NormalizeOpenAIBase(target.BaseURL)
 
 	authToken := strings.TrimSpace(target.APIKey)
@@ -305,10 +306,11 @@ func startCodexStub(registryKey, baseURL, apiKeyEnv, serveModel string, noLaunch
 	if err != nil {
 		return err
 	}
-	target, err := ResolveEndpoint(registryKey, baseURL, apiKeyEnv, serveModel)
+	target, cleanup, err := resolveReadyEndpoint(registryKey, baseURL, apiKeyEnv, serveModel, noLaunch)
 	if err != nil {
 		return err
 	}
+	defer cleanup()
 	target.BaseURL = NormalizeOpenAIBase(target.BaseURL)
 
 	heading(os.Stdout, "Start codex (stub)")

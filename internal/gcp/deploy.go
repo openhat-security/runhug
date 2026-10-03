@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 // DeployRequest is a use-time Spot GPU deploy (no hardcoded project/model).
@@ -337,6 +338,47 @@ func (c *Client) StopInstance(ctx context.Context, project, zone, name string) e
 		"--zone="+zone,
 	)
 	return err
+}
+
+// StartInstance starts a stopped/terminated Spot VM (disk retained).
+func (c *Client) StartInstance(ctx context.Context, project, zone, name string) error {
+	_, err := c.runner().Run(ctx,
+		"compute", "instances", "start", name,
+		"--project="+project,
+		"--zone="+zone,
+	)
+	return err
+}
+
+// WaitInstanceStatus polls DescribeInstance until Status matches want
+// (case-insensitive), ctx is cancelled, or every elapses with no change past deadline via ctx.
+func (c *Client) WaitInstanceStatus(ctx context.Context, project, zone, name, want string, every time.Duration) (*InstanceStatus, error) {
+	if every <= 0 {
+		every = 5 * time.Second
+	}
+	want = strings.ToUpper(strings.TrimSpace(want))
+	var last string
+	for {
+		if err := ctx.Err(); err != nil {
+			if last != "" {
+				return nil, fmt.Errorf("%w (last status %s)", err, last)
+			}
+			return nil, err
+		}
+		st, err := c.DescribeInstance(ctx, project, zone, name)
+		if err != nil {
+			return nil, err
+		}
+		last = st.Status
+		if strings.EqualFold(st.Status, want) {
+			return st, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("%w (last status %s)", ctx.Err(), last)
+		case <-time.After(every):
+		}
+	}
 }
 
 // DeleteInstance deletes a VM.

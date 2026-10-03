@@ -115,6 +115,11 @@ func coldStartRange(weightGB float64) (int, int) {
 	}
 }
 
+// ColdStartSeconds returns an approximate serverless cold-start range in seconds.
+func ColdStartSeconds(weightGB float64) (minSec, maxSec int) {
+	return coldStartRange(weightGB)
+}
+
 // DailyScenarioUSD estimates a day of N requests with coldFrac in [0,1].
 // Uses midpoints of cold/warm request ranges (honestly labeled elsewhere as approx).
 func (c ServerlessCost) DailyScenarioUSD(requests int, coldFrac float64) float64 {

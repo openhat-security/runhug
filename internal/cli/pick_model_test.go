@@ -20,7 +20,7 @@ func TestUsableRegistryEntriesFiltersAndOrders(t *testing.T) {
 			"org/b": {HFRepo: "org/b", Backend: store.BackendLocal, BaseURL: "http://127.0.0.1:1/v1", Runtime: "ollama"},
 			"org/c": {HFRepo: "org/c", Backend: store.BackendRunpod},                         // no endpoint id → skip
 			"org/d": {HFRepo: "org/d", Backend: store.BackendLocal, GGUFPath: "/tmp/x.gguf"}, // no base_url → skip
-			"org/g": {HFRepo: "org/g", Backend: store.BackendGCP, EndpointID: "vm-1", EndpointType: "us-central1-a", BaseURL: "http://127.0.0.1:8080/v1"},
+			"org/g": {HFRepo: "org/g", Backend: store.BackendGCP, EndpointID: "my-proj", EndpointType: "us-central1-a", PodID: "runhug-org-g", BaseURL: "http://127.0.0.1:8080/v1"},
 		},
 	}
 	got := usableRegistryEntries(reg)
@@ -40,7 +40,7 @@ func TestUsableRegistryEntriesFiltersAndOrders(t *testing.T) {
 	if e := byRepo["org/b"]; e.Kind != "local" || e.Where != "http://127.0.0.1:1/v1" || e.Extra != "ollama" {
 		t.Fatalf("%+v", e)
 	}
-	if e := byRepo["org/g"]; e.Kind != "gcp" || e.Where != "vm-1" || e.Extra != "us-central1-a" {
+	if e := byRepo["org/g"]; e.Kind != "gcp" || e.Where != "runhug-org-g" || e.Extra != "us-central1-a" {
 		t.Fatalf("%+v", e)
 	}
 }

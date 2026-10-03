@@ -36,10 +36,11 @@ func cmdRun(args []string) error {
 		return err
 	}
 
-	target, err := ResolveEndpoint(pickedKey, *baseURL, *apiKeyEnv, pickedModel)
+	target, cleanup, err := resolveReadyEndpoint(pickedKey, *baseURL, *apiKeyEnv, pickedModel, false)
 	if err != nil {
 		return err
 	}
+	defer cleanup()
 	target.BaseURL = NormalizeOpenAIBase(target.BaseURL)
 
 	heading(os.Stdout, "Run")

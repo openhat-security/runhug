@@ -7,12 +7,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.4.2] - 2026-10-03
+### Added
+- `runhug run` / `start` ensure cloud backends are up before chat: GCP starts the Spot VM + SSH tunnel, Runpod waits on workers, with step progress and cold-start ETA. Local ollama is started when needed.
 
-- NA
+### Changed
+- `runhug run` endpoint picker is a color-coded truncated table (`#` / `MODEL` / `BACKEND` / `WHERE` / `DETAIL`).
+- `runhug gcp tunnel` default `--local-port` is `18080` (matches deploy / registry).
 
 ## [0.4.2] - 2026-10-02
-- Cleaned up output for `runhug run`. 
+
+- Cleaned up output for `runhug run`.
+
 
 ## [0.4.1] - 2026-10-02
 

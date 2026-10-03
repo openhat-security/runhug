@@ -51,7 +51,7 @@ func cmdGCP(args []string) error {
 
 func printGCPHelp(w io.Writer) {
 	helpUsage(w, "runhug gcp <command>")
-	fmt.Fprintln(w, dim("Spot L4/T4 · llama.cpp · stop-on-idle · SSH tunnel → 127.0.0.1:8080/v1"))
+	fmt.Fprintln(w, dim("Spot L4/T4 · llama.cpp · stop-on-idle · SSH tunnel → 127.0.0.1:18080/v1"))
 	fmt.Fprintln(w)
 
 	helpSection(w, "commands")
@@ -505,7 +505,7 @@ func cmdGCPTunnel(args []string) error {
 	fs := newFlagSet("gcp tunnel")
 	project := fs.String("project", "", "GCP project")
 	zone := fs.String("zone", "", "GCE zone")
-	local := fs.Int("local-port", gcp.ServerPort, "local listen port")
+	local := fs.Int("local-port", gcp.LocalTunnelPort, "local listen port")
 	remote := fs.Int("port", gcp.ServerPort, "remote llama-server port")
 	if err := parseFlags(fs, args); err != nil {
 		return err

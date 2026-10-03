@@ -79,10 +79,11 @@ func startOpenCode(registryKey, baseURL, apiKeyEnv, serveModel string, noLaunch,
 			if err != nil {
 				return err
 			}
-			target, err := ResolveEndpoint(registryKey, baseURL, apiKeyEnv, serveModel)
+			target, cleanup, err := resolveReadyEndpoint(registryKey, baseURL, apiKeyEnv, serveModel, noLaunch || dryRun)
 			if err != nil {
 				return err
 			}
+			defer cleanup()
 			target.BaseURL = NormalizeOpenAIBase(target.BaseURL)
 			spec = buildDirect(target)
 		}

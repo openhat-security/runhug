@@ -173,7 +173,7 @@ func printPacksHelpFull(w io.Writer) {
 
 func printGCPHelpFull(w io.Writer) {
 	helpUsage(w, "runhug gcp <command>")
-	fmt.Fprintln(w, dim("Spot L4/T4 · llama.cpp · stop-on-idle · tunnel → 127.0.0.1:8080/v1"))
+	fmt.Fprintln(w, dim("Spot L4/T4 · llama.cpp · stop-on-idle · tunnel → 127.0.0.1:18080/v1"))
 	fmt.Fprintln(w, dim("Short list:"), cyan("runhug gcp --help"))
 	fmt.Fprintln(w)
 	helpFullSection(w, "commands",
@@ -185,7 +185,7 @@ func printGCPHelpFull(w io.Writer) {
 		},
 		helpFullEntry{
 			Cmd:  "tunnel [name]",
-			What: "SSH/IAP local-forward so 127.0.0.1:8080/v1 hits the VM.",
+			What: "SSH local-forward so 127.0.0.1:18080/v1 hits the VM (override with --local-port).",
 			When: "After deploy, before proxy/run/agents.",
 		},
 		helpFullEntry{

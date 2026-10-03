@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/adamsiwiec1/runhug/internal/config"
+	"github.com/adamsiwiec1/runhug/internal/gcp"
 	"github.com/adamsiwiec1/runhug/internal/hparams"
 	"github.com/adamsiwiec1/runhug/internal/runpod"
 	"github.com/adamsiwiec1/runhug/internal/store"
@@ -118,24 +119,32 @@ func targetFromModel(m store.Model, apiKey, serveModel string) (EndpointTarget, 
 			return EndpointTarget{}, fmt.Errorf("local model %s has no base_url; run `runhug local start`", m.HFRepo)
 		}
 		return EndpointTarget{
-			BaseURL:   strings.TrimRight(m.BaseURL, "/"),
-			APIKey:    apiKey,
-			Model:     modelName,
-			Source:    "local " + m.Runtime,
-			HFRepo:    m.HFRepo,
-			Sampling:  m.Sampling,
+			BaseURL:  strings.TrimRight(m.BaseURL, "/"),
+			APIKey:   apiKey,
+			Model:    modelName,
+			Source:   "local " + m.Runtime,
+			HFRepo:   m.HFRepo,
+			Sampling: m.Sampling,
 		}, nil
 	}
 	if m.Kind() == store.BackendGCP {
 		base := strings.TrimRight(m.BaseURL, "/")
 		if base == "" {
-			return EndpointTarget{}, fmt.Errorf("gcp model %s has no tunnel URL; run `runhug gcp tunnel`", m.HFRepo)
+			base = gcp.LocalOpenAIURL(gcp.LocalTunnelPort)
+		}
+		key := apiKey
+		if tok, err := gcp.LoadBearer(m.PodID); err == nil && tok != "" {
+			key = tok
+		}
+		src := "gcp"
+		if m.PodID != "" {
+			src = "gcp " + m.PodID
 		}
 		return EndpointTarget{
 			BaseURL:  base,
-			APIKey:   apiKey,
+			APIKey:   key,
 			Model:    modelName,
-			Source:   "gcp " + m.PodID,
+			Source:   src,
 			HFRepo:   m.HFRepo,
 			Sampling: m.Sampling,
 		}, nil
