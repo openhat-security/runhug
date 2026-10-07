@@ -6,7 +6,7 @@
 
 **Find the best model. Deploy it in minutes. Run it for pennies.**
 
-Website: **[runhug-web.vercel.app](https://runhug-web.vercel.app)** · Org: [openhat-security](https://github.com/openhat-security)
+Website: **[runhug.devrecated.com](https://runhug.devrecated.com)** · Org: [openhat-security](https://github.com/openhat-security)
 
 Search Hugging Face, deploy any checkpoint (RunPod serverless vLLM or GCP Spot llama.cpp), then chat via an OpenAI-compatible URL, Claude Code, or OpenCode — including abliterated **heretic** models trained in-CLI.
 
@@ -27,7 +27,7 @@ runhug connect && runhug init --yes
 runhug wizard
 ```
 
-More install options and demos: [runhug-web.vercel.app](https://runhug-web.vercel.app)
+More install options and demos: [runhug.devrecated.com](https://runhug.devrecated.com)
 
 ## Install
 
