@@ -1,5 +1,5 @@
-# Rebuild apt + dnf repos on GitHub Pages (openhat-security/packages) from the
-# latest release's .deb / .rpm assets. Free hosting; no GoReleaser Pro.
+# Merge runhug .deb / .rpm into openhat-security/packages (GitHub Pages).
+# Preserves existing truffles (and other) pool packages — does not wipe the site.
 name: Publish Linux repos
 
 on:
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to index (e.g. v0.1.8). Empty = latest.
+        description: Release tag to index (e.g. v0.1.8). Empty = latest runhug release.
         required: false
         default: ""
 
@@ -46,44 +46,41 @@ jobs:
           mkdir -p /tmp/pkgs
           gh release download "$TAG" -R openhat-security/runhug -D /tmp/pkgs -p '*.deb' -p '*.rpm' || true
           ls -la /tmp/pkgs || true
-          if ! ls /tmp/pkgs/*.deb >/dev/null 2>&1 && ! ls /tmp/pkgs/*.rpm >/dev/null 2>&1; then
+          if ! compgen -G "/tmp/pkgs/*.deb" >/dev/null && ! compgen -G "/tmp/pkgs/*.rpm" >/dev/null; then
             echo "No .deb/.rpm on release $TAG — nothing to publish"
             echo "skip=1" >> "$GITHUB_ENV"
           else
             echo "skip=0" >> "$GITHUB_ENV"
           fi
 
-      - name: Build apt + dnf trees
-        if: env.skip != '1'
-        run: bash packaging/repo/build-pages-repos.sh /tmp/pkgs public
-
       - name: Checkout packages repo
         if: env.skip != '1'
         uses: actions/checkout@v7
         with:
           repository: openhat-security/packages
-          token: ${{ secrets.PACKAGING_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PACKAGING_TOKEN }}
           path: packages-repo
+
+      - name: Merge runhug into apt + dnf site
+        if: env.skip != '1'
+        run: bash packaging/repo/build-pages-repos.sh --merge --product runhug /tmp/pkgs packages-repo
 
       - name: Push site to packages (main)
         if: env.skip != '1'
         working-directory: packages-repo
         env:
-          GH_TOKEN: ${{ secrets.PACKAGING_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.PACKAGING_TOKEN }}
         run: |
           set -euo pipefail
           git config user.name "runhug-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout main
-          git pull --ff-only origin main || true
-          # Keep README.md; replace the rest of the published site.
-          find . -mindepth 1 -maxdepth 1 ! -name '.git' ! -name 'README.md' -exec rm -rf {} +
-          cp -a ../public/. .
+          git pull --rebase origin main || true
           touch .nojekyll
           git add -A
           if git diff --cached --quiet; then
             echo "No repo changes"
             exit 0
           fi
-          git commit -m "sync packages from runhug ${{ steps.tag.outputs.tag }}"
+          git commit -m "merge runhug packages from ${{ steps.tag.outputs.tag }}"
           git push origin main

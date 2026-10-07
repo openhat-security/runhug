@@ -1,0 +1,5 @@
+[truffles]
+name=truffles (GitHub Pages)
+baseurl=@REPO_URL@/rpm
+enabled=1
+gpgcheck=0

@@ -7,7 +7,6 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 curl -fsSL "${REPO_URL}/runhug.list" -o /etc/apt/sources.list.d/runhug.list
-# Optional GPG key when present
 if curl -fsSL "${REPO_URL}/runhug.asc" -o /usr/share/keyrings/runhug.asc 2>/dev/null; then
   sed -i 's/\[trusted=yes\]/[signed-by=\/usr\/share\/keyrings\/runhug.asc]/' /etc/apt/sources.list.d/runhug.list || true
 fi

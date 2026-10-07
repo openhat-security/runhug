@@ -8,7 +8,7 @@ Release channels for runhug. Tagged releases (`v*`) are built by GoReleaser
 | GitHub Release | `scripts/install.sh` / `install.ps1` | bare binaries + `.deb` / `.rpm` |
 | Homebrew | `brew install --cask openhat-security/tap/runhug` | `openhat-security/homebrew-tap` (Cask) |
 | Homebrew (hfpacks) | `brew install --cask openhat-security/tap/hfpacks` | pack builder CLI (separate repo) |
-| apt | `curl …/install-apt.sh \| sudo bash` | Pages repo `openhat-security/packages` |
+| apt | `curl …/install-apt.sh \| sudo bash` | Pages repo `openhat-security/packages` (shared pool) |
 | dnf | `curl …/install-dnf.sh \| sudo bash` | same Pages repo |
 | pacman / AUR | `yay -S runhug-bin` | [`aur/`](aur/) (publish to AUR once) |
 | Scoop | `scoop bucket add openhat https://github.com/openhat-security/scoop-bucket` then `scoop install runhug` | `openhat-security/scoop-bucket` |
@@ -22,8 +22,27 @@ packaging/
   npm/           npm wrapper (postinstall downloads GitHub Release binary)
   aur/           Arch PKGBUILD for AUR
   winget/        winget manifest generator + per-version output
-  repo/          apt/dnf Pages templates + build-pages-repos.sh
+  repo/          apt/dnf Pages templates + build-pages-repos.sh (multi-product)
 ```
+
+## Shared `openhat-security/packages` (apt/dnf)
+
+The Pages site hosts **one deb pool** and **one rpm tree** for all OpenHat CLIs.
+Each product adds its `.deb`/`.rpm` on release and publishes product-specific
+list/repo files and install scripts (`install-apt.sh` / `install-dnf.sh` for runhug;
+`install-apt-truffles.sh` for truffles).
+
+`packaging/repo/build-pages-repos.sh --merge --product runhug …` copies new
+packages into the existing tree and rebuilds `Packages` / `repodata` without
+removing truffles (or other) artifacts. See [repo/build-pages-repos.sh](repo/build-pages-repos.sh).
+
+**Important:** every product that publishes to `openhat-security/packages` must use
+`--merge --product <name>`. Workflows that delete the whole site except `README.md`
+and copy only one product's tree will remove other products' debs and install scripts.
+
+Runhug ships the same generalized `packaging/repo/` tree as truffles (runhug + truffles product templates).
+
+New Go CLIs: [openhat-security/go-cli-packaging-template](https://github.com/openhat-security/go-cli-packaging-template).
 
 ## Org repos (create once)
 
@@ -62,6 +81,8 @@ make release BUMP=patch
 
 Pushing `v*` runs `.github/workflows/release.yml`. Use `--no-push` to tag locally only.
 An explicit version (`./scripts/release.sh 0.1.9`) still works if you need to override.
+When the GitHub Release is **published**, `.github/workflows/publish-linux-repos.yml`
+merges `.deb`/`.rpm` into `openhat-security/packages`.
 
 ## Local snapshot
 

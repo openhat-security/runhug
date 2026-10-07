@@ -1,0 +1,2 @@
+# truffles apt repo (GitHub Pages, shared pool with other OpenHat CLIs)
+deb [trusted=yes] @REPO_URL@/deb stable main
