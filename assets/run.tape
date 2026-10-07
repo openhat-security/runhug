@@ -25,6 +25,12 @@ Set BorderRadius 8
 Set WindowBar Colorful
 Set Framerate 30
 
+# Force color even when the host shell exported NO_COLOR / TERM=dumb.
+Env NO_COLOR ""
+Env TERM "xterm-256color"
+Env COLORTERM "truecolor"
+Env CLICOLOR_FORCE "1"
+
 Hide
 Type "test -x ./bin/runhug || go build -o bin/runhug ./cmd/runhug"
 Enter

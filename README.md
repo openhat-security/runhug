@@ -92,10 +92,12 @@ runhug proxy --addr 127.0.0.1:8090
                               # /v1/embeddings → registry embed_model (nomic-embed-*)
                               # chat → current (GCP tunnel / RunPod / local)
 runhug gcp deploy <gguf> --embeddings   # llama-server --embeddings
-runhug run [model]            # chat REPL
+runhug run [model]            # chat REPL (fullscreen; /mini for scrollback)
 runhug start claude           # Claude Code bridge
 runhug start opencode         # OpenCode bridge
 ```
+
+`runhug run` opens a fullscreen framed chat. Type `/mini` to restore normal scrollback, `/full` to go back.
 
 Set preferred embed row: `embed_model` in `~/.config/runhug/settings.json` (or register `nomic-embed-text` via `init` / ollama).
 

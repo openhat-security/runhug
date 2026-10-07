@@ -19,7 +19,7 @@ func runSlashCatalog() []runSlashSpec {
 		{Cmd: "/copy", Desc: "copy last error (or last reply) to the clipboard"},
 		{Cmd: "/status", Desc: "backend + readiness"},
 		{Cmd: "/metrics", Args: "[on|off|mini|full]", Desc: "GPU/CPU/RAM snapshot, strip, or live"},
-		{Cmd: "/full", Desc: "fullscreen chat (runhug frame)"},
+		{Cmd: "/full", Desc: "return to fullscreen chat (default)"},
 		{Cmd: "/mini", Desc: "leave fullscreen, restore scrollback"},
 		{Cmd: "/logs", Args: "[n]", Desc: "tail guest logs (GCP)"},
 		{Cmd: "/model", Args: "[name]", Desc: "show or set served model"},

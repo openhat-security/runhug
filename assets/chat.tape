@@ -21,6 +21,12 @@ Set BorderRadius 8
 Set WindowBar Colorful
 Set Framerate 30
 
+# Force color even when the host shell exported NO_COLOR / TERM=dumb.
+Env NO_COLOR ""
+Env TERM "xterm-256color"
+Env COLORTERM "truecolor"
+Env CLICOLOR_FORCE "1"
+
 Hide
 Type "test -x ./bin/runhug || go build -o bin/runhug ./cmd/runhug"
 Enter
@@ -32,7 +38,7 @@ Show
 
 Type "./bin/runhug run --base-url http://127.0.0.1:11434/v1 --model qwen3:8b --yes --new"
 Enter
-Sleep 3.5s
+Sleep 4s
 
 Type "/tools off"
 Enter
@@ -42,6 +48,14 @@ Type "Say hello from runhug in one short sentence."
 Enter
 Sleep 16s
 
+Type "/mini"
+Enter
+Sleep 2.5s
+
+Type "/full"
+Enter
+Sleep 2.5s
+
 Type "In five words, what is an OpenAI-compatible endpoint?"
 Enter
 Sleep 16s
@@ -50,6 +64,6 @@ Type "/exit"
 Enter
 Sleep 2.5s
 
-Type "echo '✓ runhug run — interactive CLI chat'"
+Type "echo '✓ runhug run — fullscreen chat · /mini for scrollback'"
 Enter
 Sleep 3.5s

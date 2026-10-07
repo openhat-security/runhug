@@ -149,7 +149,7 @@ func printUsage(w io.Writer, withDetails ...bool) {
 	fmt.Fprintln(w)
 
 	helpSection(w, "run")
-	helpCmd(w, "run [model]", "chat REPL")
+	helpCmd(w, "run [model]", "chat REPL (fullscreen; /mini)")
 	helpCmd(w, "metrics [model]", "live GPU / CPU / RAM dashboard")
 	helpCmd(w, "start claude|opencode", "point an agent at a deployment")
 	helpCmd(w, "local", "run models on this machine")

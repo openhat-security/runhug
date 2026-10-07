@@ -115,7 +115,7 @@ func cmdRun(args []string) error {
 		return fmt.Errorf("interactive run needs a TTY (or pass -q \"prompt\")")
 	}
 
-	fmt.Fprintf(os.Stdout, "%s chat — /help · Ctrl-D or /exit to quit\n", bold(version.Name))
+	fmt.Fprintf(os.Stdout, "%s chat — fullscreen · /mini for scrollback · /help · Ctrl-D or /exit to quit\n", bold(version.Name))
 	fmt.Fprintln(os.Stdout)
 
 	capBuf := &lineBuf{}
@@ -141,7 +141,7 @@ func cmdRun(args []string) error {
 		fmt.Fprintln(os.Stdout)
 		printSessionHistory(sess.out(), sess)
 	} else {
-		fmt.Fprintln(os.Stdout, dim("drag to copy  ·  Ctrl-V paste  ·  /sessions"))
+		fmt.Fprintln(os.Stdout, dim("drag to copy  ·  Ctrl-V paste  ·  /sessions · /mini for scrollback"))
 		fmt.Fprintln(os.Stdout)
 	}
 
@@ -158,6 +158,7 @@ func cmdRun(args []string) error {
 	ed.Capture = capBuf
 	defer sess.stopMetricsPump()
 	defer sess.leaveAltScreen()
+	sess.setChatFull(true)
 	for {
 		if sess.ChatFull {
 			ed.Prompt = fullChatPrompt()

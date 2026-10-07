@@ -7,6 +7,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- `runhug run` starts in fullscreen by default. Use `/mini` to restore scrollback; `/full` returns to the framed view.
+
 ## [0.4.4] - 2026-10-07
 
 ### Added

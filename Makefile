@@ -70,18 +70,20 @@ build-release release-snapshot:
 	bash scripts/build-release.sh
 
 # Record assets/screenshots from assets/$(TAPE).tape (needs: brew install vhs).
+# Unset NO_COLOR / force a real TERM so runhug ANSI colors render in the GIF/mp4
+# (agent/CI shells often export NO_COLOR=1 and TERM=dumb).
 demo-vhs: build
 	@command -v vhs >/dev/null || (echo "install vhs: brew install vhs" >&2; exit 1)
 	@test -f "assets/$(TAPE).tape" || (echo "missing assets/$(TAPE).tape" >&2; exit 1)
 	mkdir -p assets/screenshots
-	vhs "assets/$(TAPE).tape"
+	env -u NO_COLOR TERM=xterm-256color COLORTERM=truecolor CLICOLOR_FORCE=1 vhs "assets/$(TAPE).tape"
 
 demo-vhs-all: build
 	@command -v vhs >/dev/null || (echo "install vhs: brew install vhs" >&2; exit 1)
 	mkdir -p assets/screenshots
 	@for t in quickstart search deploy heretic run chat full; do \
 		echo "→ vhs assets/$$t.tape"; \
-		vhs "assets/$$t.tape"; \
+		env -u NO_COLOR TERM=xterm-256color COLORTERM=truecolor CLICOLOR_FORCE=1 vhs "assets/$$t.tape"; \
 	done
 
 # Example: make release BUMP=patch

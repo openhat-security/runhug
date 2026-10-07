@@ -138,7 +138,7 @@ When ready for real deploy (needs RunPod key):
 ```bash
 runhug deploy Qwen/Qwen2.5-0.5B-Instruct
 runhug proxy               # OpenAI-compatible @ 127.0.0.1:8080/v1
-runhug run                 # chat REPL
+runhug run                 # chat REPL (fullscreen; /mini for scrollback)
 runhug start claude        # or: start opencode
 ```
 

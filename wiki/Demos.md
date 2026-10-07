@@ -11,7 +11,7 @@ Watch a clip, then run the same steps yourself. Each page has a **Try it yoursel
 | [Deploy](Demo-Deploy) | GPU catalog + RunPod/GCP dry-run |
 | [Heretic](Demo-Heretic) | Abliteration dry-run |
 | [Agents](Demo-Run) | Wire Claude Code + OpenCode |
-| [Chat](Demo-Chat) | Built-in `runhug run` CLI |
+| [Chat](Demo-Chat) | Built-in `runhug run` CLI (fullscreen; `/mini` for scrollback) |
 | [Full](Demo-Full) | All of the above in order |
 
 <p>

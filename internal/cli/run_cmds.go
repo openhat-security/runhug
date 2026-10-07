@@ -109,7 +109,7 @@ func (s *runSession) setChatFull(on bool) {
 	}
 	printRunStatusStrip(s.tty(), s)
 	s.replayTranscript(s.tty())
-	fmt.Fprintln(s.tty(), dim("chat minimized  ·  /full takes over the terminal"))
+	fmt.Fprintln(s.tty(), dim("chat minimized  ·  /full returns to fullscreen"))
 	fmt.Fprintln(s.tty())
 }
 
@@ -408,7 +408,7 @@ func printRunHelp(w io.Writer, s *runSession) {
 	fmt.Fprintln(w)
 	printRunToolsHelp(w, s)
 	fmt.Fprintln(w, dim("Keys: Tab complete · type @path then Tab · ↑/↓ history · wheel / PgUp PgDn scroll (full) · drag to copy · /copy last error · Ctrl-V paste · Ctrl-C cancel / clear · Ctrl-D / /exit quit"))
-	fmt.Fprintln(w, dim("Layout: /full takes over the terminal · /mini restores scrollback"))
+	fmt.Fprintln(w, dim("Layout: starts fullscreen · /mini restores scrollback · /full returns"))
 	fmt.Fprintln(w)
 }
 

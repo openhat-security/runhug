@@ -121,7 +121,7 @@ func printUsageFull(w io.Writer) {
 			Cmd:  "run [model]",
 			What: "Interactive chat REPL against the active (or named) deployment.",
 			When: "Quick manual testing without an external client.",
-			More: "/metrics on pins a GPU strip; /full takes over the screen. Drag-select copies. /sessions resumes a chat.",
+			More: "Starts fullscreen; /mini restores scrollback. /metrics on pins a GPU strip. Drag-select copies. /sessions resumes a chat.",
 		},
 		helpFullEntry{
 			Cmd:  "metrics [model]",
