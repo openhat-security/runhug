@@ -207,6 +207,19 @@ func (c *Client) DeleteEndpoint(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodDelete, "/v2/serverless/"+url.PathEscape(id), nil, nil)
 }
 
+type UpdateEndpointRequest struct {
+	GPU     *GPUConfig `json:"gpu,omitempty"`
+	Workers *Workers   `json:"workers,omitempty"`
+}
+
+func (c *Client) UpdateEndpoint(ctx context.Context, id string, req UpdateEndpointRequest) (*Endpoint, error) {
+	var ep Endpoint
+	if err := c.do(ctx, http.MethodPatch, "/v2/serverless/"+url.PathEscape(id), req, &ep); err != nil {
+		return nil, err
+	}
+	return &ep, nil
+}
+
 // OpenAIURL returns the queue-based OpenAI base URL for worker-v1-vllm.
 // Prefer OpenAIURLFor when the endpoint type is known.
 func OpenAIURL(endpointID string) string {

@@ -40,7 +40,7 @@ func TestEntrypointSoftLocks(t *testing.T) {
 	for _, want := range []string{
 		"127.0.0.1", "--api-key", "IDLE_SECONDS", "shutdown", "runhug-api-key",
 		"runhug-hf-token", "runhug-model-id", "runhug-gguf-file",
-		"hf \"", "instances/", "/stop", "keep-up",
+		"hf \"", "instances/", "/stop", "keep-up", "EMBEDDINGS",
 	} {
 		if !strings.Contains(ep, want) {
 			t.Fatalf("entrypoint missing %q", want)
@@ -49,6 +49,17 @@ func TestEntrypointSoftLocks(t *testing.T) {
 	// Must not embed a concrete bearer.
 	if strings.Contains(ep, "rh_") {
 		t.Fatal("entrypoint unexpectedly contains rh_ bearer prefix")
+	}
+}
+
+func TestEntrypointEmbeddingsFlag(t *testing.T) {
+	ep := EntrypointScript(ImageConfig{Embeddings: true})
+	if !strings.Contains(ep, "--embeddings") {
+		t.Fatal("expected --embeddings when Embeddings=true")
+	}
+	st := StartupScript(ImageConfig{Embeddings: true})
+	if !strings.Contains(st, "EMBEDDINGS=1") {
+		t.Fatal("startup must pass EMBEDDINGS=1")
 	}
 }
 
@@ -67,7 +78,7 @@ func TestStartupDockerLauncher(t *testing.T) {
 	if strings.Contains(st, "BEGIN PRIVATE KEY") {
 		t.Fatal("startup must not contain SA keys")
 	}
-	for _, want := range []string{"docker pull", "docker run", "--gpus all", "--network host", "runhug-container-image", "127.0.0.1", "ensure_docker", "nvidia-container-toolkit"} {
+	for _, want := range []string{"docker pull", "docker run", "--gpus all", "--network host", "runhug-container-image", "127.0.0.1", "ensure_docker", "nvidia-container-toolkit", "docker.io", "ForceIPv4"} {
 		if !strings.Contains(st, want) {
 			t.Fatalf("startup missing %q", want)
 		}
@@ -117,6 +128,21 @@ func TestPushDryRun(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "Dockerfile")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPushQuietAddsProgressPlain(t *testing.T) {
+	res, err := Push(t.Context(), PushRequest{
+		Image:  "us-central1-docker.pkg.dev/p/runhug/llama-server:cuda",
+		Dir:    t.TempDir(),
+		DryRun: true,
+		Quiet:  true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(res.BuildCmd, " "), "--progress=plain") {
+		t.Fatalf("%v", res.BuildCmd)
 	}
 }
 

@@ -15,11 +15,25 @@ const (
 
 	DefaultZone   = "us-central1-a"
 	DefaultRegion = "us-central1"
-	ServerPort = 8080
+	ServerPort    = 8080
 	// LocalTunnelPort is the recommended host-side listen port for `gcp tunnel`
 	// (avoids colliding with a local :8080). OpenCode wiring uses this port.
 	LocalTunnelPort = 18080
 )
+
+// DefaultLlamaImage is the Artifact Registry tag runhug gcp push / deploy use
+// when --image / RUNHUG_GCP_IMAGE are unset.
+func DefaultLlamaImage(project, region string) string {
+	project = strings.TrimSpace(project)
+	region = strings.TrimSpace(region)
+	if region == "" {
+		region = DefaultRegion
+	}
+	if project == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s-docker.pkg.dev/%s/runhug/llama-server:cuda", region, project)
+}
 
 // GPUTarget describes a Spot GPU machine configuration.
 type GPUTarget struct {
@@ -84,4 +98,40 @@ func ZoneFromRegion(region, zone string) (string, string) {
 	}
 	// common "-a" zone; caller may override
 	return region, region + "-a"
+}
+
+// GPUCountFromMachine reads the GCE "...-Ng" suffix (a3-megagpu-8g → 8).
+func GPUCountFromMachine(machineType string) int {
+	s := strings.ToLower(strings.TrimSpace(machineType))
+	i := strings.LastIndex(s, "-")
+	if i < 0 || i+1 >= len(s) {
+		return 1
+	}
+	rest := s[i+1:]
+	if !strings.HasSuffix(rest, "g") {
+		return 1
+	}
+	n := 0
+	for _, c := range rest[:len(rest)-1] {
+		if c < '0' || c > '9' {
+			return 1
+		}
+		n = n*10 + int(c-'0')
+	}
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
+// PlausibleGPUMachine is a real-looking GCE GPU machine type (not a4x placeholders).
+func PlausibleGPUMachine(machineType string) bool {
+	mt := strings.ToLower(strings.TrimSpace(machineType))
+	if mt == "" || !strings.Contains(mt, "-") {
+		return false
+	}
+	if strings.HasPrefix(mt, "a4x") {
+		return false
+	}
+	return true
 }

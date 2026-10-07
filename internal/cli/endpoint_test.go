@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -164,10 +165,11 @@ func TestChatCompletionsNonStream(t *testing.T) {
 		})
 	}))
 	t.Cleanup(srv.Close)
-	got, err := chatCompletions(t.Context(), EndpointTarget{
+	var sink bytes.Buffer
+	got, _, err := chatCompletions(t.Context(), EndpointTarget{
 		BaseURL: srv.URL + "/v1",
 		Model:   "m",
-	}, []chatMsg{{Role: "user", Content: "hi"}}, false)
+	}, []chatMsg{{Role: "user", Content: "hi"}}, false, &sink)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -23,7 +23,7 @@ func FindServer() (string, error) {
 	return "", fmt.Errorf("llama-server not on PATH (install llama.cpp, or set LLAMA_SERVER)")
 }
 
-func Start(bin, gguf, alias string, port, ctx, threads int) (*exec.Cmd, error) {
+func Start(bin, gguf, alias string, port, ctx, threads int, embeddings bool) (*exec.Cmd, error) {
 	if port <= 0 {
 		port = 8081
 	}
@@ -46,6 +46,9 @@ func Start(bin, gguf, alias string, port, ctx, threads int) (*exec.Cmd, error) {
 	}
 	if alias != "" {
 		args = append(args, "--alias", alias)
+	}
+	if embeddings {
+		args = append(args, "--embeddings")
 	}
 	cmd := exec.Command(bin, args...)
 	cleanup, err := attachQuietIO(cmd)

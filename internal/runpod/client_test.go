@@ -131,3 +131,34 @@ func TestOpenAIURLFor(t *testing.T) {
 		t.Fatalf("default: %s", got)
 	}
 }
+
+func TestUpdateEndpointPATCH(t *testing.T) {
+	var method, path string
+	var body string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		path = r.URL.Path
+		raw, _ := io.ReadAll(r.Body)
+		body = string(raw)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"ep1","name":"n","gpu":{"pools":["AMPERE_48"],"count":1}}`)
+	}))
+	t.Cleanup(srv.Close)
+	c := New("k")
+	c.BaseURL = srv.URL
+	ep, err := c.UpdateEndpoint(context.Background(), "ep1", UpdateEndpointRequest{
+		GPU: &GPUConfig{Pools: []string{"AMPERE_48"}, Count: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodPatch || !strings.Contains(path, "/v2/serverless/ep1") {
+		t.Fatalf("%s %s", method, path)
+	}
+	if !strings.Contains(body, `"AMPERE_48"`) {
+		t.Fatalf("body %s", body)
+	}
+	if ep == nil || ep.ID != "ep1" {
+		t.Fatalf("%+v", ep)
+	}
+}

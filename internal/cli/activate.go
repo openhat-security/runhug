@@ -123,7 +123,8 @@ func activateLocal(eng runtime.Engine, spec localSpec) error {
 		if err := client.Download(ctx, model.RepoID(), filename, dest); err != nil {
 			return err
 		}
-		cmd, err := local.Start(eng.Binary, dest, model.RepoID(), runtime.LlamaPort, 4096, 0)
+		wantEmbed := strings.Contains(strings.ToLower(model.RepoID()), "embed")
+		cmd, err := local.Start(eng.Binary, dest, model.RepoID(), runtime.LlamaPort, 4096, 0, wantEmbed)
 		if err != nil {
 			return err
 		}
@@ -132,6 +133,9 @@ func activateLocal(eng runtime.Engine, spec localSpec) error {
 		m.LocalPID = cmd.Process.Pid
 		m.BaseURL = local.DefaultURL(runtime.LlamaPort)
 		m.ServeName = model.RepoID()
+		if wantEmbed {
+			m.Role = store.RoleEmbed
+		}
 	}
 
 	reg.Put(m)

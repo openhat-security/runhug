@@ -24,6 +24,9 @@ type hubView struct {
 	// 0 = single-line ellipsis truncate (default column max 48).
 	WrapWidth int
 	Verbose   bool
+	// OfferPick tells the footer to use row numbers (last search) instead of
+	// always repeating inspect/deploy for row 1.
+	OfferPick bool
 }
 
 type hubOpts struct {
@@ -149,6 +152,19 @@ func printHubResults(w io.Writer, v hubView) {
 	}
 
 	if v.SkipFooter {
+		return
+	}
+	if v.OfferPick {
+		n := len(v.Models)
+		open := []string{
+			fmt.Sprintf("1–%d          inspect that row", n),
+			"deploy N      RunPod/GCP for row N",
+			"copy N        clipboard the model id",
+		}
+		if v.Command != "" {
+			open = append(open, v.Command+" --sort likes --limit 20")
+		}
+		commands(w, "Next:", open...)
 		return
 	}
 	shown := 1

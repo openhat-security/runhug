@@ -11,17 +11,23 @@ import (
 	"time"
 
 	"github.com/adamsiwiec1/runhug/internal/config"
+	"github.com/adamsiwiec1/runhug/internal/gcp"
 	"github.com/adamsiwiec1/runhug/internal/runpod"
 	"github.com/adamsiwiec1/runhug/internal/store"
 )
 
 type Server struct {
-	Registry *store.Registry
-	APIKey   string
+	Registry   *store.Registry
+	APIKey     string
+	EmbedModel string // settings.embed_model; optional preferred registry id
 }
 
 func New(reg *store.Registry, apiKey string) *Server {
-	return &Server{Registry: reg, APIKey: config.SanitizeAPIKey(apiKey)}
+	return &Server{
+		Registry:   reg,
+		APIKey:     config.SanitizeAPIKey(apiKey),
+		EmbedModel: strings.TrimSpace(config.LoadSettings().EmbedModel),
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -35,10 +41,15 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
+	embedID := ""
+	if m, ok := s.Registry.PickEmbed(s.EmbedModel); ok {
+		embedID = m.HFRepo
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":  "ok",
-		"current": s.Registry.Current,
-		"models":  len(s.Registry.Models),
+		"status":      "ok",
+		"current":     s.Registry.Current,
+		"models":      len(s.Registry.Models),
+		"embed_model": embedID,
 	})
 }
 
@@ -78,23 +89,39 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 	if len(body) > 0 && json.Unmarshal(body, &peek) == nil {
 		model = peek.Model
 	}
+
+	suffix := openaiSuffix(r.URL.Path)
+	wantEmbed := strings.HasSuffix(suffix, "/embeddings") || suffix == "/embeddings"
+
 	entry, ok := s.Registry.Lookup(model)
+	if wantEmbed {
+		if !ok || !entry.IsEmbed() {
+			if emb, found := s.Registry.PickEmbed(s.EmbedModel); found {
+				entry, ok = emb, true
+			}
+		}
+	}
 	if !ok {
+		if wantEmbed {
+			openaiError(w, http.StatusNotFound, "no embedding model in registry; add nomic-embed-text (ollama) or deploy an embed GGUF with --embeddings")
+			return
+		}
 		openaiError(w, http.StatusNotFound, "unknown model "+model+"; register it with init, local add, or deploy")
 		return
 	}
 	if rewritten, err := rewriteModel(body, entry.UpstreamModel()); err == nil {
 		body = rewritten
 	}
-
-	suffix := openaiSuffix(r.URL.Path)
-	upstream := runpod.OpenAIURLFor(entry.EndpointType, entry.EndpointID)
-	if entry.Kind() == store.BackendLocal {
-		if entry.BaseURL == "" {
-			openaiError(w, http.StatusBadGateway, "local model has no base_url; run `local start`")
-			return
+	if wantEmbed && entry.Runtime == "ollama" {
+		if stripped, err := stripDimensions(body); err == nil {
+			body = stripped
 		}
-		upstream = strings.TrimRight(entry.BaseURL, "/")
+	}
+
+	upstream, err := upstreamBase(entry)
+	if err != nil {
+		openaiError(w, http.StatusBadGateway, err.Error())
+		return
 	}
 	target, err := url.Parse(upstream + suffix)
 	if err != nil {
@@ -105,18 +132,17 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 		target.RawQuery = r.URL.RawQuery
 	}
 
+	auth := upstreamAuth(entry, s.APIKey)
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
-			// SetURL joins inbound and target paths; we already built the
-			// full upstream path (local /v1/... or Runpod /v2/.../openai/v1/...).
 			u := *target
 			pr.Out.URL = &u
 			pr.Out.Host = u.Host
 			pr.SetXForwarded()
-			if entry.Kind() == store.BackendRunpod {
-				if key := config.SanitizeAPIKey(s.APIKey); key != "" {
-					pr.Out.Header.Set("Authorization", "Bearer "+key)
-				}
+			if auth != "" {
+				pr.Out.Header.Set("Authorization", "Bearer "+auth)
+			} else if entry.Kind() != store.BackendRunpod {
+				pr.Out.Header.Del("Authorization")
 			}
 			pr.Out.Header.Del("Cookie")
 		},
@@ -131,6 +157,43 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(w, r)
 }
 
+func upstreamBase(entry store.Model) (string, error) {
+	switch entry.Kind() {
+	case store.BackendLocal, store.BackendGCP:
+		if entry.BaseURL == "" {
+			if entry.Kind() == store.BackendLocal {
+				return "", errString("local model has no base_url; run `local start` or point ollama at 127.0.0.1:11434/v1")
+			}
+			return "", errString("gcp model has no base_url; run `runhug gcp tunnel` first")
+		}
+		return strings.TrimRight(entry.BaseURL, "/"), nil
+	default:
+		return runpod.OpenAIURLFor(entry.EndpointType, entry.EndpointID), nil
+	}
+}
+
+func upstreamAuth(entry store.Model, runpodKey string) string {
+	switch entry.Kind() {
+	case store.BackendRunpod:
+		return config.SanitizeAPIKey(runpodKey)
+	case store.BackendGCP:
+		if entry.PodID == "" {
+			return ""
+		}
+		tok, err := gcp.LoadBearer(entry.PodID)
+		if err != nil {
+			return ""
+		}
+		return config.SanitizeAPIKey(tok)
+	default:
+		return ""
+	}
+}
+
+type errString string
+
+func (e errString) Error() string { return string(e) }
+
 func rewriteModel(body []byte, id string) ([]byte, error) {
 	if len(body) == 0 || id == "" {
 		return body, nil
@@ -140,6 +203,22 @@ func rewriteModel(body []byte, id string) ([]byte, error) {
 		return body, err
 	}
 	obj["model"] = id
+	return json.Marshal(obj)
+}
+
+// stripDimensions drops OpenAI "dimensions" so ollama/nomic can answer.
+func stripDimensions(body []byte) ([]byte, error) {
+	if len(body) == 0 {
+		return body, nil
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return body, err
+	}
+	if _, ok := obj["dimensions"]; !ok {
+		return body, nil
+	}
+	delete(obj, "dimensions")
 	return json.Marshal(obj)
 }
 

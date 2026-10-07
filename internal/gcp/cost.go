@@ -5,13 +5,6 @@ import (
 	"strings"
 )
 
-// Approximate Spot $/hr for Phase 1 machine shapes in us-central1.
-// Not a Google quote — list/Spot prices move; labeled as estimates in the CLI.
-const (
-	SpotHourlyT4 = 0.14 // n1-standard-4 + 1× T4 Spot (approx)
-	SpotHourlyL4 = 0.35 // g2-standard-4 (1× L4) Spot (approx)
-)
-
 // SpotCost is a rough GCP Spot VM cost projection for Phase 1.
 type SpotCost struct {
 	GPU           string
@@ -24,16 +17,15 @@ type SpotCost struct {
 	IdleHoldUSD   float64 // cost of one idle linger then stop
 	HourUSD       float64 // same as HourlyUSD (alias for clarity)
 	Day8hUSD      float64 // 8h kept up
+	Day24hUSD     float64 // 24h kept up
+	Month24x7USD  float64 // 30 days × 24h
 	Assumptions   []string
 }
 
 // EstimateSpotCost builds an approximate Spot bill model.
 // weightGB informs cold-start range (docker pull + GGUF download + load).
 func EstimateSpotCost(target GPUTarget, idleSeconds int, keepUp bool, weightGB float64) SpotCost {
-	hourly := SpotHourlyL4
-	if target.Name == GPUTypeT4 {
-		hourly = SpotHourlyT4
-	}
+	hourly := SpotHourlyUSD(target)
 	if idleSeconds < 0 {
 		idleSeconds = 600
 	}
@@ -46,8 +38,8 @@ func EstimateSpotCost(target GPUTarget, idleSeconds int, keepUp bool, weightGB f
 		idleHold = hourly * float64(idleSeconds) / 3600
 	}
 	assumptions := []string{
-		"Spot VM $/hr while RUNNING (GPU + machine); TERMINATED ≈ $0 compute (disk may still bill).",
-		"Prices are approximate us-central1 Spot list rates — not a Google quote; stock/preemption vary.",
+		"Spot GPU $/hr from Cloud Billing list SKUs (us-central1 / Americas); vCPU/RAM extra. TERMINATED ≈ $0 compute (disk may still bill).",
+		"Prices are Google list Spot/Preemptible GPU SKUs — they can change up to daily; not a contract quote.",
 		fmt.Sprintf("Cold start ≈ docker install/pull + GGUF (~%.1f GB) + load → ~%d–%d min first boot.", weightGB, coldMin, coldMax),
 	}
 	if keepUp {
@@ -68,8 +60,92 @@ func EstimateSpotCost(target GPUTarget, idleSeconds int, keepUp bool, weightGB f
 		ColdStartMaxM: coldMax,
 		IdleHoldUSD:   idleHold,
 		Day8hUSD:      hourly * 8,
+		Day24hUSD:     hourly * 24,
+		Month24x7USD:  hourly * 24 * 30,
 		Assumptions:   assumptions,
 	}
+}
+
+// SpotHourlyUSD is the Cloud Billing Spot GPU SKU × GPU count (0 if unpublished).
+func SpotHourlyUSD(target GPUTarget) float64 {
+	ensureQuoteCache()
+	return SpotQuoteHourly(target)
+}
+
+func scaleSpotHourly(machineType string, perGPU float64) float64 {
+	if perGPU <= 0 {
+		return 0
+	}
+	n := GPUCountFromMachine(machineType)
+	if n > 1 {
+		return perGPU * float64(n)
+	}
+	return perGPU
+}
+
+func KeepUpDayUSD(hourly float64) float64 {
+	if hourly <= 0 {
+		return 0
+	}
+	return hourly * 24
+}
+
+func KeepUpMonthUSD(hourly float64) float64 {
+	if hourly <= 0 {
+		return 0
+	}
+	return hourly * 24 * 30
+}
+
+func signedUSD(v float64) string {
+	if v > 0 {
+		return "+" + formatUSD(v)
+	}
+	if v < 0 {
+		return "-" + formatUSD(-v)
+	}
+	return formatUSD(0)
+}
+
+// FormatKeepUp is hourly + 24/7 day + 30-day month.
+func FormatKeepUp(hourly float64) string {
+	if hourly <= 0 {
+		return "no Google Spot GPU SKU"
+	}
+	return fmt.Sprintf("%s/hr · %s/day · %s/mo if 24/7",
+		formatUSDHour(hourly), formatUSD(KeepUpDayUSD(hourly)), formatUSD(KeepUpMonthUSD(hourly)))
+}
+
+func formatUSDHour(v float64) string {
+	s := fmt.Sprintf("$%.4f", v)
+	s = strings.TrimRight(s, "0")
+	s = strings.TrimRight(s, ".")
+	if !strings.Contains(s, ".") {
+		return s + ".00"
+	}
+	return s
+}
+
+// FormatCostChange is a confirm-block for GPU resize / keep-up.
+func FormatCostChange(fromGPU, toGPU string, fromH, toH float64) string {
+	fromGPU = strings.TrimSpace(fromGPU)
+	toGPU = strings.TrimSpace(toGPU)
+	if fromGPU == "" {
+		fromGPU = "current"
+	}
+	if toGPU == "" {
+		toGPU = "new"
+	}
+	var b strings.Builder
+	b.WriteString("Cost if kept up 24/7 (Google Cloud Billing Spot GPU SKU; vCPU/RAM extra)\n")
+	b.WriteString(fmt.Sprintf("  now    %s  %s\n", fromGPU, FormatKeepUp(fromH)))
+	b.WriteString(fmt.Sprintf("  after  %s  %s\n", toGPU, FormatKeepUp(toH)))
+	if fromH > 0 && toH > 0 && fromH != toH {
+		d := toH - fromH
+		b.WriteString(fmt.Sprintf("  delta  %s/hr · %s/day · %s/mo\n",
+			signedUSD(d), signedUSD(KeepUpDayUSD(d)), signedUSD(KeepUpMonthUSD(d))))
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func spotColdStartMinutes(weightGB float64) (int, int) {
@@ -104,13 +180,13 @@ func (c SpotCost) FormatBlock(verbose bool) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("Cost estimate · Spot %s (%s)\n", c.GPU, c.MachineType))
 	b.WriteString(fmt.Sprintf("  $/hr while up     %s\n", formatUSD(c.HourlyUSD)))
+	b.WriteString(fmt.Sprintf("  24/7 day          ≈ %s\n", formatUSD(c.Day24hUSD)))
+	b.WriteString(fmt.Sprintf("  24/7 month (30d)  ≈ %s\n", formatUSD(c.Month24x7USD)))
 	b.WriteString(fmt.Sprintf("  est. cold start  ~%d–%d min (first boot)\n", c.ColdStartMinM, c.ColdStartMaxM))
 	if c.KeepUp {
 		b.WriteString("  stop-on-idle     OFF (keep-up)\n")
-		b.WriteString(fmt.Sprintf("  if left 8h       ≈ %s\n", formatUSD(c.Day8hUSD)))
 	} else {
 		b.WriteString(fmt.Sprintf("  idle then stop   ~%ds ≈ %s (disk kept)\n", c.IdleSeconds, formatUSD(c.IdleHoldUSD)))
-		b.WriteString(fmt.Sprintf("  if left 8h       ≈ %s (keep-up only)\n", formatUSD(c.Day8hUSD)))
 	}
 	if verbose && len(c.Assumptions) > 0 {
 		b.WriteString("  assumptions\n")

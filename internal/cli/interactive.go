@@ -33,6 +33,7 @@ func runREPL() error {
 	fmt.Fprintf(os.Stdout, "%s %s — Interactive Mode\n\n", bold(version.Name), version.Version)
 	fmt.Fprintln(os.Stdout, "Commands:")
 	fmt.Fprintln(os.Stdout, "  "+cyan("search -q \"...\"")+"        Local index search (id, tags, description; --online for Hub)")
+	fmt.Fprintln(os.Stdout, "  "+cyan("3")+" / "+cyan("inspect 3")+"      Inspect row 3 from last search")
 	fmt.Fprintln(os.Stdout, "  "+cyan("copy N")+"                Copy model id from last search (N = row number)")
 	fmt.Fprintln(os.Stdout, "  "+cyan("inspect <model>")+"       Show model details")
 	fmt.Fprintln(os.Stdout, "  "+cyan("deploy <model>")+"        Deploy model to Runpod")
@@ -95,15 +96,15 @@ func (s *replSession) handleCommand(line string) error {
 
 	case "inspect", "i":
 		if len(args) == 0 {
-			return fmt.Errorf("usage: inspect <model>")
+			return fmt.Errorf("usage: inspect <model|#>")
 		}
-		return cmdInspect(args)
+		return cmdInspect([]string{s.resolveREPLModel(args[0])})
 
 	case "deploy", "d":
 		if len(args) == 0 {
-			return fmt.Errorf("usage: deploy <model>")
+			return fmt.Errorf("usage: deploy <model|#>")
 		}
-		return cmdDeploy(args)
+		return cmdDeploy([]string{s.resolveREPLModel(args[0])})
 
 	case "connect":
 		return cmdConnect(args)
@@ -115,8 +116,37 @@ func (s *replSession) handleCommand(line string) error {
 		return cmdList(args)
 
 	default:
+		if n, err := strconv.Atoi(cmd); err == nil && len(args) == 0 {
+			id, ok := s.rowID(n)
+			if !ok {
+				return fmt.Errorf("row %d is not in last search — run search first", n)
+			}
+			return cmdInspect([]string{id})
+		}
 		return fmt.Errorf("unknown command %q — type 'help' for available commands", cmd)
 	}
+}
+
+func (s *replSession) resolveREPLModel(arg string) string {
+	n, err := strconv.Atoi(strings.TrimSpace(arg))
+	if err != nil || n < 1 {
+		return arg
+	}
+	if id, ok := s.rowID(n); ok {
+		return id
+	}
+	id, err := resolveModelArg(arg)
+	if err != nil {
+		return arg
+	}
+	return id
+}
+
+func (s *replSession) rowID(n int) (string, bool) {
+	if n >= 1 && n <= len(s.lastSearchResults) {
+		return s.lastSearchResults[n-1].RepoID(), true
+	}
+	return lookupLastSearchID(n)
 }
 
 func (s *replSession) cmdHelp() error {
@@ -156,6 +186,7 @@ func (s *replSession) cmdSearchREPL(args []string) error {
 
 	s.lastSearchResults = models
 	s.lastSearchQuery = query
+	saveLastSearch(query, models)
 
 	printHubResults(os.Stdout, hubView{
 		Query:      query,
@@ -166,6 +197,7 @@ func (s *replSession) cmdSearchREPL(args []string) error {
 		RankSource: meta.RankSource,
 		Queries:    meta.Queries,
 		WrapWidth:  resolveWrapWidth(*sf.wrap, *sf.wordWrap, *sf.ww),
+		OfferPick:  true,
 	})
 
 	return nil

@@ -2,6 +2,7 @@ package gcp
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -9,8 +10,10 @@ import (
 )
 
 type fakeRunner struct {
-	calls [][]string
-	err   error
+	calls       [][]string
+	err         error
+	stdout      string
+	jsonPayload string
 }
 
 func (f *fakeRunner) Run(ctx context.Context, args ...string) (string, error) {
@@ -19,12 +22,18 @@ func (f *fakeRunner) Run(ctx context.Context, args ...string) (string, error) {
 	if f.err != nil {
 		return "", f.err
 	}
-	return "", nil
+	return f.stdout, nil
 }
 
 func (f *fakeRunner) RunJSON(ctx context.Context, dest any, args ...string) error {
 	_, err := f.Run(ctx, args...)
-	return err
+	if err != nil {
+		return err
+	}
+	if f.jsonPayload != "" && dest != nil {
+		return json.Unmarshal([]byte(f.jsonPayload), dest)
+	}
+	return nil
 }
 
 func TestBuildPlanRequiresProjectAndModel(t *testing.T) {
@@ -86,6 +95,9 @@ func TestBuildPlanL4Default(t *testing.T) {
 	}
 	if !strings.HasPrefix(plan.Name, "runhug-") {
 		t.Fatalf("name=%s", plan.Name)
+	}
+	if !strings.Contains(plan.OpenAIHint, "18080") || plan.TunnelHint != "runhug run" {
+		t.Fatalf("hints openai=%q tunnel=%q", plan.OpenAIHint, plan.TunnelHint)
 	}
 }
 
@@ -194,5 +206,24 @@ func TestBuildPlanPublicIP(t *testing.T) {
 	joined := strings.Join(plan.CreateArgs, " ")
 	if strings.Contains(joined, "no-address") {
 		t.Fatal("public-ip dogfood must not set no-address")
+	}
+}
+
+func TestEnablePublicIPRewritesCreateArgs(t *testing.T) {
+	plan, err := BuildPlan(DeployRequest{
+		Project:        "p",
+		ModelID:        "org/m",
+		Bearer:         "rh_x",
+		ContainerImage: "us-docker.pkg.dev/p/runhug/llama-server:cuda",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(plan.CreateArgs, " "), "no-address") {
+		t.Fatal("expected no-address default")
+	}
+	plan.EnablePublicIP()
+	if strings.Contains(strings.Join(plan.CreateArgs, " "), "no-address") {
+		t.Fatal("EnablePublicIP must drop no-address")
 	}
 }

@@ -49,7 +49,7 @@ func TestWizardChecklistContent(t *testing.T) {
 	s := buf.String()
 	for _, want := range []string{
 		"Wizard",
-		"Init search stack",
+		"Search index",
 		"HF token",
 		"Runpod",
 		"Advisor",
@@ -59,7 +59,7 @@ func TestWizardChecklistContent(t *testing.T) {
 		"Live deploy",
 		"Proxy",
 		"Never auto-creates a live Runpod endpoint",
-		"runhug init",
+		"runhug packs install",
 		"runhug deploy <org/model> --dry-run",
 	} {
 		if !strings.Contains(s, want) {

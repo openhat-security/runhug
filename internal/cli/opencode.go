@@ -104,7 +104,7 @@ func startOpenCode(registryKey, baseURL, apiKeyEnv, serveModel string, noLaunch,
 	fmt.Fprintln(os.Stdout)
 
 	if dryRun {
-		out, err := json.MarshalIndent(cfg, "", "  ")
+		out, err := json.MarshalIndent(maskOpenCodeSecrets(cfg), "", "  ")
 		if err != nil {
 			return err
 		}
@@ -163,6 +163,33 @@ func openCodeConfig(spec openCodeSpec, modelKey string) map[string]any {
 		},
 	}
 	return cfg
+}
+
+// maskOpenCodeSecrets returns a deep copy of cfg with provider apiKey values redacted for stdout.
+func maskOpenCodeSecrets(cfg map[string]any) map[string]any {
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return cfg
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return cfg
+	}
+	providers, _ := out["provider"].(map[string]any)
+	for _, p := range providers {
+		pm, ok := p.(map[string]any)
+		if !ok {
+			continue
+		}
+		opts, _ := pm["options"].(map[string]any)
+		if opts == nil {
+			continue
+		}
+		if key, ok := opts["apiKey"].(string); ok && key != "" {
+			opts["apiKey"] = maskSecret(key)
+		}
+	}
+	return out
 }
 
 // writeOpenCodeConfig deep-merges cfg into the opencode config at path,

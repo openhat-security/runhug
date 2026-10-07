@@ -10,7 +10,8 @@
 * [Search](Demo-Search)
 * [Deploy](Demo-Deploy)
 * [Heretic](Demo-Heretic)
-* [Run](Demo-Run)
+* [Agents](Demo-Run)
+* [Chat](Demo-Chat)
 * [Full](Demo-Full)
 
 **Links**

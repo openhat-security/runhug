@@ -199,7 +199,7 @@ func initOfferIndex(yes bool) error {
 		}
 	}
 	if !ok {
-		fmt.Fprintln(os.Stdout, dim("Skip packs — run: runhug init  (or update)"))
+		fmt.Fprintln(os.Stdout, dim("Skip packs — run: runhug packs install  (or update)"))
 		fmt.Fprintln(os.Stdout)
 		return nil
 	}

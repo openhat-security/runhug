@@ -282,6 +282,7 @@ func cmdLocalStart(args []string) error {
 	ctxSize := fs.Int("ctx", 4096, "context tokens (llama-server -c)")
 	threads := fs.Int("threads", 0, "CPU threads (0 = all)")
 	bin := fs.String("bin", "", "llama-server binary")
+	embeddings := fs.Bool("embeddings", false, "enable llama-server --embeddings (POST /v1/embeddings)")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -293,6 +294,7 @@ func cmdLocalStart(args []string) error {
 	if !ok {
 		return fmt.Errorf("unknown model; `local add` or `init` first")
 	}
+	wantEmbed := *embeddings || m.IsEmbed()
 	switch m.Runtime {
 	case runtime.Ollama:
 		if err := runtime.EnsureOllama(""); err != nil {
@@ -320,7 +322,7 @@ func cmdLocalStart(args []string) error {
 		if m.GGUFPath == "" {
 			return fmt.Errorf("%s has no GGUF path (use --url models as-is, or add --gguf)", m.HFRepo)
 		}
-		cmd, err := local.Start(*bin, m.GGUFPath, m.HFRepo, *port, *ctxSize, *threads)
+		cmd, err := local.Start(*bin, m.GGUFPath, m.HFRepo, *port, *ctxSize, *threads, wantEmbed)
 		if err != nil {
 			return err
 		}
@@ -328,6 +330,9 @@ func cmdLocalStart(args []string) error {
 		m.BaseURL = local.DefaultURL(*port)
 	}
 	m.Backend = store.BackendLocal
+	if wantEmbed {
+		m.Role = store.RoleEmbed
+	}
 	reg.Put(m)
 	reg.Current = m.HFRepo
 	if err := reg.Save(); err != nil {

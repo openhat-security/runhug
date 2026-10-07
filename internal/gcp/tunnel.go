@@ -1,10 +1,14 @@
 package gcp
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/adamsiwiec1/runhug/internal/runtime"
@@ -19,6 +23,8 @@ type TunnelOpts struct {
 	Instance   string
 	RemotePort int
 	LocalPort  int
+	// ThroughIAP forces --tunnel-through-iap (required for no-external-IP VMs).
+	ThroughIAP bool
 }
 
 func (o TunnelOpts) withDefaults() TunnelOpts {
@@ -32,17 +38,31 @@ func (o TunnelOpts) withDefaults() TunnelOpts {
 }
 
 // TunnelArgs returns gcloud compute ssh args that open a local port forward.
+// SSH options force non-interactive mode so background tunnels cannot hang on
+// host-key prompts when stdin is not a TTY.
 func TunnelArgs(o TunnelOpts) []string {
 	o = o.withDefaults()
 	fwd := fmt.Sprintf("%d:127.0.0.1:%d", o.LocalPort, o.RemotePort)
-	return []string{
+	args := []string{
 		"compute", "ssh", o.Instance,
 		"--project=" + o.Project,
 		"--zone=" + o.Zone,
+		"--quiet",
+	}
+	if o.ThroughIAP {
+		args = append(args, "--tunnel-through-iap")
+	}
+	args = append(args,
 		"--",
 		"-N",
 		"-L", fwd,
-	}
+		"-o", "BatchMode=yes",
+		"-o", "ExitOnForwardFailure=yes",
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "ServerAliveInterval=30",
+		"-o", "ServerAliveCountMax=3",
+	)
+	return args
 }
 
 // LocalOpenAIURL is the OpenAI-compatible base after the tunnel is up.
@@ -58,6 +78,11 @@ type TunnelHandle struct {
 	Cmd       *exec.Cmd
 	LocalPort int
 	BaseURL   string
+
+	mu     sync.Mutex
+	stderr bytes.Buffer
+	errCh  chan error
+	waited bool
 }
 
 // Stop kills the background tunnel process (no-op if nil / already exited).
@@ -66,7 +91,26 @@ func (h *TunnelHandle) Stop() {
 		return
 	}
 	_ = h.Cmd.Process.Kill()
-	_, _ = h.Cmd.Process.Wait()
+	h.waitOnce()
+}
+
+func (h *TunnelHandle) waitOnce() error {
+	if h == nil || h.errCh == nil {
+		return nil
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.waited {
+		return nil
+	}
+	h.waited = true
+	return <-h.errCh
+}
+
+func (h *TunnelHandle) stderrText() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return strings.TrimSpace(h.stderr.String())
 }
 
 // StartTunnel runs gcloud compute ssh -N -L in the foreground.
@@ -103,24 +147,23 @@ func (c *Client) StartTunnelBackground(ctx context.Context, o TunnelOpts) (*Tunn
 	args := TunnelArgs(o)
 	bin := tunnelBinary(c)
 	cmd := exec.Command(bin, args...) //nolint:gosec // gcloud args from TunnelOpts
-	cleanup, err := runtime.DiscardChildIO(cmd)
-	if err != nil {
-		return nil, err
-	}
-	runtime.DetachProcess(cmd)
-	if err := cmd.Start(); err != nil {
-		cleanup()
-		return nil, fmt.Errorf("start gcp tunnel: %w", err)
-	}
-	cleanup()
-	// Optional: notice early death while caller waits for the port.
-	go func() { _, _ = cmd.Process.Wait() }()
-	_ = ctx // reserved for future cancel-to-kill wiring
-	return &TunnelHandle{
+	h := &TunnelHandle{
 		Cmd:       cmd,
 		LocalPort: o.LocalPort,
 		BaseURL:   LocalOpenAIURL(o.LocalPort),
-	}, nil
+		errCh:     make(chan error, 1),
+	}
+	cmd.Stdout = io.Discard
+	cmd.Stderr = &h.stderr
+	runtime.DetachProcess(cmd)
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start gcp tunnel: %w", err)
+	}
+	go func() {
+		h.errCh <- cmd.Wait()
+	}()
+	_ = ctx
+	return h, nil
 }
 
 // WaitLocal blocks until the local forward port accepts TCP connections.
@@ -139,16 +182,37 @@ func (h *TunnelHandle) WaitLocal(ctx context.Context, d time.Duration) error {
 		if runtime.PortOpen(h.LocalPort) {
 			return nil
 		}
-		if h.Cmd != nil && h.Cmd.ProcessState != nil && h.Cmd.ProcessState.Exited() {
-			return fmt.Errorf("gcp tunnel exited before 127.0.0.1:%d opened", h.LocalPort)
-		}
 		select {
+		case err := <-h.errCh:
+			h.mu.Lock()
+			h.waited = true
+			h.mu.Unlock()
+			msg := h.stderrText()
+			if msg != "" {
+				return fmt.Errorf("gcp tunnel exited before 127.0.0.1:%d opened: %s", h.LocalPort, truncateTunnelErr(msg))
+			}
+			if err != nil {
+				return fmt.Errorf("gcp tunnel exited before 127.0.0.1:%d opened: %w", h.LocalPort, err)
+			}
+			return fmt.Errorf("gcp tunnel exited before 127.0.0.1:%d opened", h.LocalPort)
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
-	return fmt.Errorf("gcp tunnel: nothing listening on 127.0.0.1:%d", h.LocalPort)
+	msg := h.stderrText()
+	if msg != "" {
+		return fmt.Errorf("gcp tunnel: nothing listening on 127.0.0.1:%d — %s", h.LocalPort, truncateTunnelErr(msg))
+	}
+	return fmt.Errorf("gcp tunnel: nothing listening on 127.0.0.1:%d (ssh still connecting? try: runhug gcp tunnel)", h.LocalPort)
+}
+
+func truncateTunnelErr(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= 400 {
+		return s
+	}
+	return s[:400] + "…"
 }
 
 func tunnelBinary(c *Client) string {

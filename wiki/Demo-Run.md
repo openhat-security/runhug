@@ -1,40 +1,25 @@
-# Demo: Run
+# Demo: Agents (Claude Code & OpenCode)
 
-Local engines, chat REPL, Claude/OpenCode bridges, OpenAI proxy.
+Point Claude Code or OpenCode at a runhug OpenAI-compatible URL — same backend you deploy or run locally.
 
-![Run demo](https://raw.githubusercontent.com/openhat-security/runhug/main/assets/screenshots/run.gif)
+![Agents demo](https://raw.githubusercontent.com/openhat-security/runhug/main/assets/screenshots/run.gif)
 
 ## Try it yourself
 
-### 1. Local engines
+### 1. Claude Code
 
 ```bash
-runhug local setup
-runhug local add --help
+runhug start claude --yes --base-url http://127.0.0.1:11434/v1 --model qwen3:8b
+# starts the Anthropic→OpenAI bridge and launches Claude Code
 ```
 
-### 2. Chat REPL
+### 2. OpenCode
 
 ```bash
-runhug run --help
-# against an active deployment:
-runhug run
+runhug start opencode --yes --base-url http://127.0.0.1:11434/v1 --model qwen3:8b
+# writes ~/.config/opencode/opencode.json and launches OpenCode
 ```
 
-### 3. Point an agent at a deployment
+Use your RunPod / GCP / registry model instead of `--base-url` when a deployment is current.
 
-```bash
-runhug start
-runhug start claude --no-launch --yes
-runhug start opencode --dry-run --yes
-```
-
-### 4. Local OpenAI proxy
-
-```bash
-runhug proxy --help
-# then:
-runhug proxy                  # 127.0.0.1:8080/v1
-```
-
-← [All demos](Demos) · [Setup](Setup)
+← [All demos](Demos) · [Chat REPL](Demo-Chat) · [Setup](Setup)

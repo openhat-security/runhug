@@ -18,3 +18,12 @@ __pycache__/
 containers/llamacpp-build/
 .opencode/
 .wrangler/
+
+
+# test with runhug run
+cmd/cdedux/
+
+internal/c2edux/
+
+# Local checkout of https://github.com/anomalyco/opencode (dev) for reading — not part of this repo.
+/localcode/

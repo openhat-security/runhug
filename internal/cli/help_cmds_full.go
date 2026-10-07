@@ -18,7 +18,7 @@ func printSearchHelpFull(w io.Writer) {
 			Cmd:  "search [query]",
 			What: "Find models by text query against your local index (or live Hub with --online).",
 			When: "Everyday discovery before inspect / deploy / local add.",
-			More: "--type = broad pack bucket (llm, vision, image, …)\n  --task = exact Hub pipeline_tag\n  --online/--hub for live Hub (rate-limited; set HF_TOKEN)",
+			More: "--type = broad pack bucket (llm, vision, image, …)\n  --task = exact Hub pipeline_tag\n  --online/--hub for live Hub (rate-limited; set HF_TOKEN)\n  After results: type a row # (inspect), deploy N, copy N, or Enter. Later: runhug inspect 3",
 		},
 	)
 	helpSection(w, "flags")
@@ -44,7 +44,7 @@ func printDeployHelpFull(w io.Writer) {
 			Cmd:  "deploy <model>",
 			What: "Create a RunPod serverless endpoint running worker-vLLM for the Hub repo.",
 			When: "You need an OpenAI-compatible HTTPS URL quickly.",
-			More: "Requires runhug connect. Use --dry-run --estimate before spending.\n  GGUF needs --provider gcp or a llama.cpp worker (--force to override).",
+			More: "GGUF auto-routes to GCP Spot llama.cpp. Safetensors uses RunPod vLLM.\n  --dry-run --estimate before spending. --force keeps GGUF on RunPod.",
 		},
 		helpFullEntry{
 			Cmd:  "--provider gcp",
@@ -179,9 +179,9 @@ func printGCPHelpFull(w io.Writer) {
 	helpFullSection(w, "commands",
 		helpFullEntry{
 			Cmd:  "deploy [model]",
-			What: "Create a Spot VM with a prebuilt image (AR/GCR) serving llama.cpp OpenAI API.",
+			What: "Create a Spot VM serving llama.cpp OpenAI API (builds+pushes the image if missing).",
 			When: "Cheaper than RunPod serverless for GGUF / long Spot runs.",
-			More: "Needs --project, --image (live). --dry-run --estimate first.\n  Also: runhug deploy --provider gcp <model>",
+			More: "Needs a GCP project. Non-GGUF models y/n onto RunPod. --dry-run --estimate first.\n  Also: runhug deploy --provider gcp <model>",
 		},
 		helpFullEntry{
 			Cmd:  "tunnel [name]",

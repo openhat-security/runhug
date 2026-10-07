@@ -12,9 +12,25 @@ func TestTunnelArgsDefaultLocalPort(t *testing.T) {
 		Instance: "runhug-x",
 	})
 	joined := strings.Join(args, " ")
-	want := "18080:127.0.0.1:8080"
-	if !strings.Contains(joined, want) {
-		t.Fatalf("want forward %s in %s", want, joined)
+	for _, want := range []string{
+		"18080:127.0.0.1:8080",
+		"BatchMode=yes",
+		"ExitOnForwardFailure=yes",
+		"StrictHostKeyChecking=accept-new",
+		"--quiet",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("want %q in %s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "--tunnel-through-iap") {
+		t.Fatalf("IAP should be opt-in: %s", joined)
+	}
+	iap := TunnelArgs(TunnelOpts{
+		Project: "p", Zone: "z", Instance: "i", ThroughIAP: true,
+	})
+	if !strings.Contains(strings.Join(iap, " "), "--tunnel-through-iap") {
+		t.Fatalf("missing IAP flag: %v", iap)
 	}
 }
 

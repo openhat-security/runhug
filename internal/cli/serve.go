@@ -52,6 +52,12 @@ func cmdProxy(args []string) error {
 	if reg.Current != "" {
 		printKV(os.Stdout, "current", bold(reg.Current))
 	}
+	settings := config.LoadSettings()
+	if emb, ok := reg.PickEmbed(settings.EmbedModel); ok {
+		printKV(os.Stdout, "embed_model", bold(emb.HFRepo))
+	} else {
+		printKV(os.Stdout, "embed_model", dim("(none — add nomic-embed-text)"))
+	}
 	ids := make([]string, 0, len(reg.Models))
 	for id := range reg.Models {
 		ids = append(ids, id)
@@ -66,6 +72,7 @@ func cmdProxy(args []string) error {
 	fmt.Fprintln(os.Stdout)
 	commands(os.Stdout, "Health:",
 		fmt.Sprintf("curl http://%s/v1/models", listen),
+		fmt.Sprintf("curl -sS http://%s/v1/embeddings -H 'Content-Type: application/json' -d '{\"model\":\"default\",\"input\":\"hi\"}'", listen),
 	)
 
 	h := proxy.New(reg, env.RunpodAPIKey).Handler()

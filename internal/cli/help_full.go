@@ -21,12 +21,6 @@ func printUsageFull(w io.Writer) {
 			When: "New install, or when you want guided setup instead of memorizing flags.",
 		},
 		helpFullEntry{
-			Cmd:  "init",
-			What: "Install curated category packs into your local search index (~/.config/runhug/models.db).",
-			When: "First time, or after deleting your index. Prefer update for later refreshes.",
-			More: "Flags: --yes skips prompts. Seeds from the bundled index when you have none yet.",
-		},
-		helpFullEntry{
 			Cmd:  "packs",
 			What: "Install, list, update, or remove category index packs from hfpacks Releases.",
 			When: "Growing or refreshing the local index (producer: openhat-security/hfpacks).",
@@ -102,6 +96,11 @@ func printUsageFull(w io.Writer) {
 			When: "Finding endpoint IDs, URLs, or what is still running.",
 		},
 		helpFullEntry{
+			Cmd:  "cost",
+			What: "Up/down for every registry instance, GPU SKU $/hr, now vs 24/7 sums (by backend).",
+			When: "Checking what is billing and the 24/7 total if nothing is stopped.",
+		},
+		helpFullEntry{
 			Cmd:  "use / url / status / delete / import",
 			What: "Select active deployment, print URL, check health, tear down, or import an endpoint.",
 			When: "Day-2 ops after deploy.",
@@ -122,6 +121,13 @@ func printUsageFull(w io.Writer) {
 			Cmd:  "run [model]",
 			What: "Interactive chat REPL against the active (or named) deployment.",
 			When: "Quick manual testing without an external client.",
+			More: "/metrics on pins a GPU strip; /full takes over the screen. Drag-select copies. /sessions resumes a chat.",
+		},
+		helpFullEntry{
+			Cmd:  "metrics [model]",
+			What: "Fullscreen live GPU, VRAM, CPU load, RAM, disk (GCP guest or this machine).",
+			When: "A second terminal next to chat, or a dedicated dashboard.",
+			More: "q / Ctrl-C leaves. Same view as /metrics full inside run.",
 		},
 		helpFullEntry{
 			Cmd:  "start claude|opencode",

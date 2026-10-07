@@ -162,5 +162,6 @@ runhug packs update        # index packs from hfpacks
 | Search / packs / recommend | [Demo: Search](Demo-Search) |
 | Deploy dry-run + GCP | [Demo: Deploy](Demo-Deploy) |
 | Heretic abliteration | [Demo: Heretic](Demo-Heretic) |
-| Local / chat / agents | [Demo: Run](Demo-Run) |
+| Built-in chat REPL | [Demo: Chat](Demo-Chat) |
+| Claude Code / OpenCode | [Demo: Agents](Demo-Run) |
 | Everything in order | [Demo: Full](Demo-Full) |

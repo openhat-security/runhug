@@ -32,6 +32,8 @@ type DeployRequest struct {
 	PublicIP bool
 	// WeightGB optional GGUF size hint for cost/cold-start projection.
 	WeightGB float64
+	// Embeddings enables llama-server --embeddings (POST /v1/embeddings).
+	Embeddings bool
 }
 
 // DeployPlan is the printable / executable plan.
@@ -93,6 +95,7 @@ func BuildPlan(req DeployRequest) (*DeployPlan, error) {
 		Port:        ServerPort,
 		IdleSeconds: idle,
 		KeepUp:      keepUp,
+		Embeddings:  req.Embeddings,
 	}
 	if strings.TrimSpace(req.Bearer) == "" {
 		return nil, fmt.Errorf("internal: Bearer required before BuildPlan (CLI GenerateBearer)")
@@ -100,8 +103,7 @@ func BuildPlan(req DeployRequest) (*DeployPlan, error) {
 
 	containerImage := strings.TrimSpace(req.ContainerImage)
 	if containerImage == "" {
-		// Printable placeholder for dry-run; live Deploy rejects empty.
-		containerImage = fmt.Sprintf("%s-docker.pkg.dev/%s/runhug/llama-server:cuda", DefaultRegion, req.Project)
+		containerImage = DefaultLlamaImage(req.Project, region)
 	}
 
 	plan := &DeployPlan{
@@ -121,12 +123,22 @@ func BuildPlan(req DeployRequest) (*DeployPlan, error) {
 		Dockerfile:     Dockerfile(img),
 		Entrypoint:     EntrypointScript(img),
 		Startup:        StartupScript(img),
-		OpenAIHint:     fmt.Sprintf("http://127.0.0.1:%d/v1 (after SSH tunnel)", ServerPort),
-		TunnelHint:     fmt.Sprintf("runhug gcp tunnel %s --project %s --zone %s", name, req.Project, zone),
+		OpenAIHint:     fmt.Sprintf("%s after runhug run", LocalOpenAIURL(LocalTunnelPort)),
+		TunnelHint:     "runhug run",
 	}
 	plan.CreateArgs = buildCreateArgsPrintable(plan)
 	plan.FirewallArgs = buildFirewallArgs(plan.Project)
 	return plan, nil
+}
+
+// EnablePublicIP switches a no-address plan to an ephemeral external IP and
+// regenerates printable create args.
+func (p *DeployPlan) EnablePublicIP() {
+	if p == nil {
+		return
+	}
+	p.PublicIP = true
+	p.CreateArgs = buildCreateArgsPrintable(p)
 }
 
 func buildCreateArgsPrintable(plan *DeployPlan) []string {

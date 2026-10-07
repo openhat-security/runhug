@@ -8,6 +8,21 @@ import (
 	"runtime"
 )
 
+func pasteFromClipboard() (string, error) {
+	switch runtime.GOOS {
+	case "linux":
+		if _, err := exec.LookPath("wl-paste"); err == nil {
+			out, err := exec.Command("wl-paste", "-n").Output()
+			return string(out), err
+		}
+		if _, err := exec.LookPath("xclip"); err == nil {
+			out, err := exec.Command("xclip", "-selection", "clipboard", "-o").Output()
+			return string(out), err
+		}
+	}
+	return "", fmt.Errorf("clipboard paste not supported on %s", runtime.GOOS)
+}
+
 func copyToClipboard(text string) error {
 	switch runtime.GOOS {
 	case "linux":

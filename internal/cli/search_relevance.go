@@ -51,7 +51,7 @@ var (
 )
 
 func errNoSearchIndex() error {
-	return fmt.Errorf("no local search index found.\nRun `runhug packs install` or `runhug init` to download packs from hfpacks Releases.\nOr pass --online / --hub for a live Hub search (rate-limited; set HF_TOKEN).")
+	return fmt.Errorf("no local search index found.\nRun `runhug packs install` to download packs from hfpacks Releases.\nOr pass --online / --hub for a live Hub search (rate-limited; set HF_TOKEN).")
 }
 
 func resolveSearchIndex() (path, source string) {

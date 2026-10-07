@@ -14,6 +14,7 @@ import (
 	"github.com/adamsiwiec1/runhug/internal/hf"
 	"github.com/adamsiwiec1/runhug/internal/hparams"
 	"github.com/adamsiwiec1/runhug/internal/recommend"
+	"github.com/adamsiwiec1/runhug/internal/runpod"
 	"github.com/adamsiwiec1/runhug/internal/runtime"
 )
 
@@ -98,6 +99,7 @@ func cmdSearch(args []string) error {
 	if *asJSON {
 		return writeJSON(models)
 	}
+	saveLastSearch(query, models)
 	printHubResults(os.Stdout, hubView{
 		Query:      query,
 		Models:     models,
@@ -108,6 +110,7 @@ func cmdSearch(args []string) error {
 		Queries:    meta.Queries,
 		WrapWidth:  resolveWrapWidth(*sf.wrap, *sf.wordWrap, *sf.ww),
 		Verbose:    *sf.verbose || runtime.Verbose(),
+		OfferPick:  !*asJSON && *copyIdx == 0 && len(models) > 0,
 	})
 	if *copyIdx > 0 {
 		if *copyIdx > len(models) {
@@ -118,8 +121,9 @@ func cmdSearch(args []string) error {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "%s  %s\n", green("copied"), id)
+		return nil
 	}
-	return nil
+	return offerSearchPick(models)
 }
 
 func searchAndPrint(query string, opts hubOpts) error {
@@ -243,7 +247,10 @@ func cmdInspect(args []string) error {
 		printInspectHelp(os.Stderr)
 		return fmt.Errorf("model required")
 	}
-	modelID := fs.Arg(0)
+	modelID, err := resolveModelArg(fs.Arg(0))
+	if err != nil {
+		return err
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
@@ -301,7 +308,7 @@ func cmdInspect(args []string) error {
 	}
 	printKV(os.Stdout, "disk", fmt.Sprintf("%d GB container (ephemeral)", est.DiskGB))
 	if format.Engine == hf.EngineGGUF {
-		printKV(os.Stdout, "engine", yellow("GGUF — do not deploy on worker-vllm; use a llama.cpp worker"))
+		printKV(os.Stdout, "engine", yellow("GGUF — GCP Spot llama.cpp (not RunPod vLLM)"))
 	} else {
 		printKV(os.Stdout, "engine", green("vLLM"))
 	}
@@ -322,25 +329,24 @@ func cmdInspect(args []string) error {
 	}
 	printInspectAlternatives(os.Stdout, alts)
 	fmt.Fprintln(os.Stdout)
-	next := []string{
-		"runhug deploy " + model.RepoID(),
-		"runhug connect",
+	gpuPool := ""
+	if c, ok := plan.(runpod.Choice); ok {
+		gpuPool = c.Pool.ID
 	}
-	if format.Engine == hf.EngineGGUF {
-		next = []string{
-			"runhug init --model " + model.RepoID(),
-			"runhug search " + model.RepoID() + " --sort likes",
-		}
-	}
-	if len(alts) > 0 {
-		top := alts[0].RepoID
-		next = append([]string{
-			"runhug inspect " + top,
-			"runhug deploy " + top,
-		}, next...)
-	}
-	commands(os.Stdout, "Next:", next...)
+	commands(os.Stdout, "Next:", inspectNextCommands(model.RepoID(), format.Engine == hf.EngineGGUF, gpuPool)...)
 	return nil
+}
+
+func inspectNextCommands(id string, gguf bool, gpuPool string) []string {
+	rec := "runhug recommend gpu " + id
+	if gguf {
+		return []string{"runhug deploy --provider gcp " + id, rec}
+	}
+	dep := "runhug deploy " + id
+	if gpuPool != "" {
+		dep += " --gpu " + gpuPool
+	}
+	return []string{dep, rec}
 }
 
 func printInspectAlternatives(w io.Writer, alts []recommend.Alternative) {
@@ -414,4 +420,6 @@ func printSearchHelp(w io.Writer) {
 
 	fmt.Fprintf(w, "%s %s\n", dim("example:"), cyan(`runhug search aero --type llm`))
 	fmt.Fprintf(w, "%s %s\n", dim("example:"), cyan(`runhug search qwen --online --engine vllm`))
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "%s %s\n", dim("then:"), cyan("3")+"  inspect row 3 ·  "+cyan("deploy 3")+"  ·  "+cyan("runhug inspect 3"))
 }

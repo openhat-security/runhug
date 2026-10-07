@@ -346,7 +346,6 @@ func cmdGPUList(args []string) error {
 		fmt.Fprintf(os.Stdout, "%s  %s\n", bold("Local catalog"), dim(fmt.Sprintf("(%d SKUs you can run locally)", len(catalogAll))))
 	}
 
-	printGPUTableHeader()
 	if len(rows) == 0 {
 		fmt.Fprintln(os.Stdout, dim("  (no GPUs matched)"))
 		if strings.EqualFold(*filter, "runpod") && config.Load().RunpodAPIKey == "" {
@@ -354,7 +353,7 @@ func cmdGPUList(args []string) error {
 		}
 		return nil
 	}
-	printGPUTableRows(rows)
+	printGPUTable(rows)
 	fmt.Fprintln(os.Stdout)
 	fmt.Fprintln(os.Stdout, dim("FP16 = TechPowerUp vector TFLOPS (not tensor-peak). TC = tensor core count."))
 	if strings.EqualFold(*filter, "all") {
@@ -367,75 +366,78 @@ func cmdGPUList(args []string) error {
 	return nil
 }
 
-func printGPUTableHeader() {
-	fmt.Fprintf(os.Stdout, "  %s %s %s %s %s %s %s %s %s\n",
-		dim(padRight("#", 4)),
-		dim(padRight("NAME", 28)),
-		dim(padRight("VRAM", 6)),
-		dim(padRight("FP16", 7)),
-		dim(padRight("TC", 5)),
-		dim(padRight("PROV", 7)),
-		dim(padRight("KEY", 12)),
-		dim(padRight("$/HR", 6)),
-		dim("STOCK"),
-	)
-}
-
 func printGPUTable(rows []gpuRow) {
-	printGPUTableHeader()
-	printGPUTableRows(rows)
+	printGPUTableTo(os.Stdout, rows)
 }
 
-func printGPUTableRows(rows []gpuRow) {
+func printGPUTableTo(w io.Writer, rows []gpuRow) {
+	cols := []tableCol{
+		{Title: "#", Min: 4, Max: 4, Right: true},
+		{Title: "NAME", Min: 28, Max: 28},
+		{Title: "VRAM", Min: 6, Max: 6, Right: true},
+		{Title: "FP16", Min: 7, Max: 7, Right: true},
+		{Title: "TC", Min: 5, Max: 5, Right: true},
+		{Title: "PROV", Min: 7, Max: 7},
+		{Title: "KEY", Min: 12, Max: 12},
+		{Title: "$/HR", Min: 6, Max: 8, Right: true},
+		{Title: "STOCK", Min: 8, Max: 10},
+	}
+	out := make([][]tableCell, 0, len(rows))
 	for i, r := range rows {
 		stock := r.Stock
-		stockOut := padRight(stock, 8)
+		stockStyle := func(s string) string { return s }
 		switch {
 		case r.Yours || stock == "yours":
-			stockOut = green(padRight("yours", 8))
+			stock = "yours"
+			stockStyle = green
 		case r.Provider == "runpod" || r.Provider == "gcp":
 			if r.InStock {
-				stockOut = green(padRight(stock, 8))
+				stockStyle = green
 			} else if stock != "" {
-				stockOut = yellow(padRight(stock, 8))
+				stockStyle = yellow
 			}
 		}
-		price := "-"
+		price := "—"
 		if r.PricePerHr > 0 {
 			price = fmt.Sprintf("%.2f", r.PricePerHr)
 		}
-		fp16 := "-"
+		fp16 := "—"
 		if r.FP16 > 0 {
 			fp16 = fmt.Sprintf("%.0f", r.FP16)
 		}
-		tc := "-"
+		tc := "—"
 		if r.TensorCores > 0 {
 			tc = strconv.Itoa(r.TensorCores)
 		}
 		prov := r.Provider
 		if prov == "" {
-			prov = "-"
+			prov = "—"
 		}
 		key := r.Key
 		if key == "" {
-			key = "-"
+			key = "—"
 		}
 		name := r.Name
 		if r.Yours {
 			name = name + " *"
 		}
-		fmt.Fprintf(os.Stdout, "  %s %s %s %s %s %s %s %s %s\n",
-			padRight(strconv.Itoa(i+1), 4),
-			bold(padRight(truncateRunes(name, 28), 28)),
-			padRight(fmt.Sprintf("%.0f", r.MemoryGB), 6),
-			padRight(fp16, 7),
-			padRight(tc, 5),
-			padRight(prov, 7),
-			padRight(truncateRunes(key, 12), 12),
-			padRight(price, 6),
-			stockOut,
-		)
+		vram := "—"
+		if r.MemoryGB > 0 {
+			vram = fmt.Sprintf("%.0f", r.MemoryGB)
+		}
+		out = append(out, []tableCell{
+			styledCell(strconv.Itoa(i+1), cyan),
+			styledCell(name, bold),
+			cell(vram),
+			cell(fp16),
+			cell(tc),
+			cell(prov),
+			cell(key),
+			cell(price),
+			styledCell(stock, stockStyle),
+		})
 	}
+	printTable(w, cols, out)
 }
 
 func cmdGPUSet(args []string) error {

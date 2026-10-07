@@ -45,9 +45,9 @@ func wizardChecklist(w io.Writer) error {
 			note:  "Find an HF model → deploy on Runpod → pennies/hour while a worker is up.",
 		},
 		{
-			title: "2. Init search stack",
-			note:  "Embedder + category packs (local SQLite search).",
-			cmds:  []string{"runhug init"},
+			title: "2. Search index",
+			note:  "Category packs (local SQLite search).",
+			cmds:  []string{"runhug packs install"},
 			done:  fileExists(indexFilePath()) || fileExists(bundledIndexPath()),
 		},
 		{

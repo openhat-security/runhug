@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +25,12 @@ type PushRequest struct {
 	Platform string
 	// DryRun writes files and prints docker commands without running them.
 	DryRun bool
+	// Out receives docker stdout+stderr. Nil uses the process TTY (verbose).
+	Out io.Writer
+	// OnStep is called with "build" then "push" around the docker commands.
+	OnStep func(string)
+	// Quiet adds --progress=plain so output is log-friendly (no TTY spinner).
+	Quiet bool
 }
 
 // PushResult is the outcome of a local build/push.
@@ -64,13 +71,11 @@ func Push(ctx context.Context, req PushRequest) (*PushResult, error) {
 		return nil, err
 	}
 
-	buildCmd := []string{
-		"docker", "build",
-		"--platform", platform,
-		"-t", image,
-		"-f", filepath.Join(dir, "Dockerfile"),
-		dir,
+	buildCmd := []string{"docker", "build", "--platform", platform, "-t", image}
+	if req.Quiet {
+		buildCmd = append(buildCmd, "--progress=plain")
 	}
+	buildCmd = append(buildCmd, "-f", filepath.Join(dir, "Dockerfile"), dir)
 	pushCmd := []string{"docker", "push", image}
 
 	res := &PushResult{
@@ -90,26 +95,42 @@ func Push(ctx context.Context, req PushRequest) (*PushResult, error) {
 		return nil, fmt.Errorf("docker not on PATH — install Docker Desktop / Engine, then retry (local build only; no Cloud Build)")
 	}
 
-	if err := runDocker(ctx, buildCmd[1:]...); err != nil {
+	out := req.Out
+	if req.OnStep != nil {
+		req.OnStep("build")
+	}
+	if err := runDocker(ctx, out, buildCmd[1:]...); err != nil {
 		cleanup()
 		return nil, fmt.Errorf("docker build: %w", err)
 	}
-	if err := runDocker(ctx, pushCmd[1:]...); err != nil {
+	if req.OnStep != nil {
+		req.OnStep("push")
+	}
+	if err := runDocker(ctx, out, pushCmd[1:]...); err != nil {
 		cleanup()
 		return nil, fmt.Errorf("docker push: %w", err)
 	}
 	return res, nil
 }
 
-func runDocker(ctx context.Context, args ...string) error {
+func runDocker(ctx context.Context, out io.Writer, args ...string) error {
 	cmd := exec.CommandContext(ctx, "docker", args...)
-	cmd.Stdout = os.Stdout
+	cmd.Stdin = nil
 	var stderr bytes.Buffer
-	cmd.Stderr = &teeWriter{a: os.Stderr, b: &stderr}
+	if out != nil {
+		cmd.Stdout = out
+		cmd.Stderr = io.MultiWriter(out, &stderr)
+	} else {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = &teeWriter{a: os.Stderr, b: &stderr}
+	}
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
 			msg = err.Error()
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 		return fmt.Errorf("%s", msg)
 	}

@@ -28,7 +28,6 @@ func TestUsageMentionsSearch(t *testing.T) {
 	printUsage(&buf)
 	s := buf.String()
 	for _, want := range []string{
-		"init",
 		"wizard",
 		"search",
 		"Hugging Face",
@@ -39,6 +38,7 @@ func TestUsageMentionsSearch(t *testing.T) {
 		"heretic",
 		"packs",
 		"list",
+		"cost",
 		"proxy",
 		"local",
 		"update",
@@ -82,5 +82,9 @@ func TestRemovedCommands(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "unknown command") {
 			t.Fatalf("%s: %v", cmd, err)
 		}
+	}
+	err := Run([]string{"init"})
+	if err == nil || !strings.Contains(err.Error(), "removed") {
+		t.Fatalf("init: %v", err)
 	}
 }

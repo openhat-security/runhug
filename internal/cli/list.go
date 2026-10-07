@@ -58,9 +58,9 @@ func cmdList(args []string) error {
 	heading(os.Stdout, "List")
 	if len(reg.Models) == 0 {
 		fmt.Fprintf(os.Stdout, "%s  %s\n\n", dim("registry"), path)
-		commands(os.Stdout, "Empty — search or init:",
+		commands(os.Stdout, "Empty — search or deploy:",
 			"runhug search instruct --sort likes",
-			"runhug init",
+			"runhug deploy <org/model>",
 		)
 	} else {
 		printRegistry(reg)

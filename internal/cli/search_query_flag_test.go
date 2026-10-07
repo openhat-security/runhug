@@ -169,6 +169,33 @@ func TestPrintHubResultsHasActionsColumn(t *testing.T) {
 	}
 }
 
+func TestPrintHubResultsOfferPick(t *testing.T) {
+	var buf bytes.Buffer
+	printHubResults(&buf, hubView{
+		Models:    []hf.Model{{ID: "org/a"}, {ID: "org/b"}},
+		OfferPick: true,
+		Command:   "runhug search cyber",
+	})
+	s := buf.String()
+	if !strings.Contains(s, "1–2") || !strings.Contains(s, "deploy N") || !strings.Contains(s, "copy N") {
+		t.Fatalf("offer-pick footer missing\n%s", s)
+	}
+	if strings.Contains(s, "runhug inspect org/a") {
+		t.Fatalf("should not pin row 1 inspect\n%s", s)
+	}
+}
+
+func TestInspectNextCommands(t *testing.T) {
+	gguf := inspectNextCommands("org/gguf", true, "AMPERE_24")
+	if strings.Join(gguf, "\n") != "runhug deploy --provider gcp org/gguf\nrunhug recommend gpu org/gguf" {
+		t.Fatalf("%v", gguf)
+	}
+	vllm := inspectNextCommands("org/vllm", false, "AMPERE_24")
+	if strings.Join(vllm, "\n") != "runhug deploy org/vllm --gpu AMPERE_24\nrunhug recommend gpu org/vllm" {
+		t.Fatalf("%v", vllm)
+	}
+}
+
 func TestWrapFlagsResolveWidth(t *testing.T) {
 	cases := []struct {
 		args []string

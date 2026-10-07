@@ -100,9 +100,8 @@ func PrintConfig(w io.Writer, s Snapshot) {
 		fmt.Fprintf(w, "  %-10s %-12s %s\n", e.Kind, state, dash(e.Binary))
 	}
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "init (search embedder + index)")
-	fmt.Fprintln(w, "  runhug init")
-	fmt.Fprintln(w, "  runhug init --yes")
+	fmt.Fprintln(w, "search index")
+	fmt.Fprintln(w, "  runhug packs install")
 	fmt.Fprintln(w, "  runhug connect hf")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "search Hugging Face")

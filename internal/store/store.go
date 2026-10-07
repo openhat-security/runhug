@@ -24,26 +24,42 @@ type Registry struct {
 	Models  map[string]Model `json:"models"`
 }
 
+const (
+	RoleChat  = "chat"
+	RoleEmbed = "embed"
+)
+
 type Model struct {
-	HFRepo        string    `json:"hf_repo"`
-	Backend       string    `json:"backend,omitempty"`
-	EndpointID    string    `json:"endpoint_id,omitempty"`
-	EndpointType  string    `json:"endpoint_type,omitempty"`
-	PodID         string    `json:"pod_id,omitempty"`
-	PodCloud      string    `json:"pod_cloud,omitempty"`
-	DashboardURL  string    `json:"dashboard_url,omitempty"`
-	DashboardPort int       `json:"dashboard_port,omitempty"`
-	BaseURL       string    `json:"base_url,omitempty"`
-	GGUFPath      string    `json:"gguf_path,omitempty"`
-	Runtime       string    `json:"runtime,omitempty"`
-	ServeName     string    `json:"serve_name,omitempty"`
-	LocalPID      int       `json:"local_pid,omitempty"`
-	GPUPool       string    `json:"gpu_pool,omitempty"`
-	GPUCount      int       `json:"gpu_count,omitempty"`
-	Image         string    `json:"image,omitempty"`
-	HourlyUSD     float64           `json:"hourly_usd,omitempty"`
-	Sampling      *hparams.Sampling `json:"sampling,omitempty"`
-	CreatedAt     time.Time         `json:"created_at"`
+	HFRepo        string `json:"hf_repo"`
+	Backend       string `json:"backend,omitempty"`
+	EndpointID    string `json:"endpoint_id,omitempty"`
+	EndpointType  string `json:"endpoint_type,omitempty"`
+	PodID         string `json:"pod_id,omitempty"`
+	PodCloud      string `json:"pod_cloud,omitempty"`
+	DashboardURL  string `json:"dashboard_url,omitempty"`
+	DashboardPort int    `json:"dashboard_port,omitempty"`
+	BaseURL       string `json:"base_url,omitempty"`
+	GGUFPath      string `json:"gguf_path,omitempty"`
+	Runtime       string `json:"runtime,omitempty"`
+	ServeName     string `json:"serve_name,omitempty"`
+	// Role is chat (default) or embed. Embed models are preferred for /v1/embeddings.
+	Role      string            `json:"role,omitempty"`
+	LocalPID  int               `json:"local_pid,omitempty"`
+	GPUPool   string            `json:"gpu_pool,omitempty"`
+	GPUCount  int               `json:"gpu_count,omitempty"`
+	Image     string            `json:"image,omitempty"`
+	HourlyUSD float64           `json:"hourly_usd,omitempty"`
+	Sampling  *hparams.Sampling `json:"sampling,omitempty"`
+	CreatedAt time.Time         `json:"created_at"`
+}
+
+// IsEmbed reports whether this registry row is an embedding checkpoint.
+func (m Model) IsEmbed() bool {
+	if strings.EqualFold(strings.TrimSpace(m.Role), RoleEmbed) {
+		return true
+	}
+	name := strings.ToLower(m.HFRepo + " " + m.ServeName)
+	return strings.Contains(name, "embed")
 }
 
 func (m Model) Kind() string {
@@ -191,4 +207,44 @@ func (r *Registry) Use(key string) (Model, error) {
 	}
 	r.Current = m.HFRepo
 	return m, nil
+}
+
+// PickEmbed returns the best embedding model in the registry.
+// preferred (settings.embed_model) wins when present; else score by name/role.
+func (r *Registry) PickEmbed(preferred string) (Model, bool) {
+	if r == nil {
+		return Model{}, false
+	}
+	preferred = strings.TrimSpace(preferred)
+	if preferred != "" {
+		if m, ok := r.Lookup(preferred); ok {
+			return m, true
+		}
+	}
+	best, bestScore := Model{}, -1
+	found := false
+	for _, m := range r.Models {
+		score := 0
+		if m.IsEmbed() {
+			score = 50
+		}
+		name := strings.ToLower(m.HFRepo + " " + m.ServeName)
+		switch {
+		case strings.Contains(name, "nomic-embed"):
+			score += 100
+		case strings.Contains(name, "mxbai-embed"):
+			score += 70
+		case strings.Contains(name, "all-minilm"):
+			score += 60
+		case strings.Contains(name, "embed"):
+			score += 40
+		}
+		if score > bestScore {
+			best, bestScore, found = m, score, true
+		}
+	}
+	if !found || bestScore <= 0 {
+		return Model{}, false
+	}
+	return best, true
 }

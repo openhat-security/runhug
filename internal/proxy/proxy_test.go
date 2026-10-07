@@ -142,3 +142,60 @@ func TestForwardRunpodInjectsBearer(t *testing.T) {
 		t.Fatalf("%s", body)
 	}
 }
+
+func TestForwardEmbeddingsPicksEmbedModel(t *testing.T) {
+	var gotPath, gotBody string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		raw, _ := io.ReadAll(r.Body)
+		gotBody = string(raw)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"data":[{"embedding":[0.1,0.2],"index":0}],"object":"list"}`)
+	}))
+	t.Cleanup(up.Close)
+
+	reg := &store.Registry{
+		Current: "chat/model",
+		Models: map[string]store.Model{
+			"chat/model": {
+				HFRepo:  "chat/model",
+				Backend: store.BackendLocal,
+				BaseURL: "http://127.0.0.1:9/v1", // unused if embed wins
+			},
+			"nomic-embed-text:latest": {
+				HFRepo:    "nomic-embed-text:latest",
+				Backend:   store.BackendLocal,
+				Runtime:   "ollama",
+				ServeName: "nomic-embed-text:latest",
+				Role:      store.RoleEmbed,
+				BaseURL:   up.URL + "/v1",
+			},
+		},
+	}
+	h := New(reg, "").Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(`{"model":"default","input":"hi","dimensions":1536}`))
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, req)
+	if res.Code != 200 {
+		t.Fatalf("status %d body %s", res.Code, res.Body.String())
+	}
+	if gotPath != "/v1/embeddings" {
+		t.Fatalf("path %s", gotPath)
+	}
+	if !strings.Contains(gotBody, "nomic-embed-text") {
+		t.Fatalf("expected embed model rewrite, body %s", gotBody)
+	}
+	if strings.Contains(gotBody, "dimensions") {
+		t.Fatalf("ollama path must strip dimensions: %s", gotBody)
+	}
+}
+
+func TestStripDimensions(t *testing.T) {
+	out, err := stripDimensions([]byte(`{"model":"x","input":"y","dimensions":1536}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "dimensions") {
+		t.Fatalf("%s", out)
+	}
+}

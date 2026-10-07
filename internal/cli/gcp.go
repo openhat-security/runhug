@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/adamsiwiec1/runhug/internal/config"
@@ -55,9 +57,9 @@ func printGCPHelp(w io.Writer) {
 	fmt.Fprintln(w)
 
 	helpSection(w, "commands")
-	helpCmd(w, "deploy [model]", "create Spot VM (needs --image)")
+	helpCmd(w, "deploy [model]", "create Spot VM (pushes image if missing)")
 	helpCmd(w, "tunnel [name]", "SSH local-forward to /v1")
-	helpCmd(w, "status|stop|delete", "instance lifecycle")
+	helpCmd(w, "status|stop|delete", "lifecycle (defaults to last deploy)")
 	helpCmd(w, "dockerfile", "view Dockerfile + entrypoint (pager)")
 	helpCmd(w, "push", "local docker build + push to AR")
 	helpCmd(w, "opencode", "merge .opencode/opencode.json")
@@ -65,7 +67,7 @@ func printGCPHelp(w io.Writer) {
 
 	helpSection(w, "deploy flags")
 	helpFlag(w, "--project --zone --gpu", "GCP project / zone / L4|T4")
-	helpFlag(w, "--image <ref>", "prebuilt AR/GCR image (required live)")
+	helpFlag(w, "--image <ref>", "AR/GCR tag (default: project llama-server)")
 	helpFlag(w, "--idle-timeout --keep-up", "stop-on-idle (default 600s)")
 	helpFlag(w, "--estimate -e", "full Spot cost block")
 	helpFlag(w, "--verbose -v", "assumptions + extra detail")
@@ -107,6 +109,7 @@ func cmdGCPDeploy(args []string) error {
 	fs.BoolVar(estimate, "e", false, "alias for --estimate")
 	verbose := fs.Bool("verbose", false, "include assumptions, gcloud argv, Dockerfile dump")
 	fs.BoolVar(verbose, "v", false, "alias for --verbose")
+	embeddings := fs.Bool("embeddings", false, "enable llama-server --embeddings (POST /v1/embeddings)")
 	samplingMode := fs.String("sampling", "recommended", "recommended, none, or customize (with --set)")
 	var setFlag stringsFlag
 	fs.Var(&setFlag, "set", "sampling KEY=VALUE (repeatable)")
@@ -159,6 +162,11 @@ func cmdGCPDeploy(args []string) error {
 	if modelID == "" {
 		return fmt.Errorf("usage: runhug gcp deploy <org/model> — model is required (never hardcoded)")
 	}
+	resolved, err := resolveModelArg(modelID)
+	if err != nil {
+		return err
+	}
+	modelID = resolved
 
 	// Resolve Hub card when possible (prefer GGUF).
 	hctx, hcancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -175,8 +183,8 @@ func cmdGCPDeploy(args []string) error {
 	} else {
 		modelID = model.RepoID()
 		format = hf.DetectFormat(*model)
-		if format.Engine != hf.EngineGGUF && format.Engine != hf.EngineUnknown {
-			fmt.Fprintf(os.Stderr, "%s %s looks like %s; GCP Phase 1 serves llama.cpp GGUF only\n", yellow("warning:"), modelID, format.Engine)
+		if format.Engine != hf.EngineGGUF && format.Engine != hf.EngineUnknown && ggufFile == "" {
+			return redirectNonGGUFToRunpod(modelID, format.Engine, *yes, *dry, *asJSON, *estimate, *verbose)
 		}
 		if ggufFile == "" {
 			if file, q, ok := hf.PickGGUF(*model); ok {
@@ -200,11 +208,10 @@ func cmdGCPDeploy(args []string) error {
 		fmt.Fprintf(os.Stderr, "%s using saved GPU preference %s\n", dim("note:"), preferGPU)
 	}
 	if !*dry && !*yes && promptOK() {
-		rate := gcp.SpotHourlyL4
-		if strings.EqualFold(strings.TrimSpace(preferGPU), "T4") {
-			rate = gcp.SpotHourlyT4
-		}
-		warn := fmt.Sprintf("Keep Spot VM up with NO stop-on-idle? Bills ~$%.2f/hr until you run runhug gcp stop", rate)
+		_ = client.RefreshSpotQuotes(ctx)
+		tgt, _ := gcp.PickTarget(preferGPU)
+		rate := gcp.SpotHourlyUSD(tgt)
+		warn := fmt.Sprintf("Keep Spot VM up with NO stop-on-idle? Bills ~%s until you run runhug gcp stop (GPU SKU; vCPU/RAM extra)", gcp.FormatKeepUp(rate))
 		if *keepUpFlag {
 			// Explicit --keep-up still requires an interactive billing ack unless --yes.
 			if !confirmPref(warn+"?", false) {
@@ -225,8 +232,33 @@ func cmdGCPDeploy(args []string) error {
 	if imgRef == "" {
 		imgRef = strings.TrimSpace(os.Getenv("RUNHUG_GCP_IMAGE"))
 	}
+	if imgRef == "" {
+		reg, _ := gcp.ZoneFromRegion(*region, *zone)
+		imgRef = gcp.DefaultLlamaImage(proj, reg)
+		if imgRef != "" {
+			fmt.Fprintf(os.Stderr, "%s image %s\n", dim("note:"), imgRef)
+		}
+	}
 	if imgRef == "" && !*dry {
-		return fmt.Errorf("live create needs a prebuilt image: pass --image REGION-docker.pkg.dev/PROJECT/runhug/llama-server:TAG (or set RUNHUG_GCP_IMAGE). Build with: runhug gcp push --image <ref>. Dry-run works without --image.")
+		return fmt.Errorf("could not infer Artifact Registry image (pass --project)")
+	}
+
+	needPush := false
+	if !*dry && gcp.CanAutoPush(imgRef) {
+		exists, _ := client.ArtifactImageExists(ctx, imgRef)
+		needPush = !exists
+		if needPush {
+			fmt.Fprintf(os.Stderr, "%s %s not in Artifact Registry yet — will docker build+push on confirm\n", dim("note:"), imgRef)
+		}
+	}
+
+	usePublic := *publicIP
+	if !usePublic {
+		reg, _ := gcp.ZoneFromRegion(*region, *zone)
+		if has, err := client.HasCloudNAT(ctx, proj, reg); err == nil && !has {
+			usePublic = true
+			fmt.Fprintf(os.Stderr, "%s no Cloud NAT in %s — ephemeral external IP so docker and the GGUF can download\n", dim("note:"), reg)
+		}
 	}
 
 	plan, err := gcp.BuildPlan(gcp.DeployRequest{
@@ -244,8 +276,9 @@ func cmdGCPDeploy(args []string) error {
 		HFToken:        env.HFToken,
 		DryRun:         *dry,
 		ContainerImage: imgRef,
-		PublicIP:       *publicIP,
+		PublicIP:       usePublic,
 		WeightGB:       weightGB,
+		Embeddings:     *embeddings,
 	})
 	if err != nil {
 		return err
@@ -259,6 +292,7 @@ func cmdGCPDeploy(args []string) error {
 			return err
 		}
 		plan.Image = plan.Image.WithSampling(chosen)
+		plan.Image.Embeddings = *embeddings
 		plan.Entrypoint = gcp.EntrypointScript(plan.Image)
 		plan.Startup = gcp.StartupScript(plan.Image)
 	}
@@ -283,7 +317,7 @@ func cmdGCPDeploy(args []string) error {
 		}
 		if *verbose {
 			spec := gcp.OpenCodeSpec{
-				BaseURL: gcp.LocalOpenAIURL(gcp.ServerPort),
+				BaseURL: gcp.LocalOpenAIURL(gcp.LocalTunnelPort),
 				ModelID: modelID,
 				Source:  "gcp ssh tunnel",
 			}
@@ -305,10 +339,20 @@ func cmdGCPDeploy(args []string) error {
 	}
 
 	if !*yes {
-		msg := fmt.Sprintf("Create Spot %s VM %s in %s/%s (~%s/hr while up)?",
-			plan.Target.Name, plan.Name, plan.Project, plan.Zone, fmt.Sprintf("$%.2f", plan.Cost.HourlyUSD))
-		if !confirm(msg) {
+		msg := fmt.Sprintf("Create Spot %s VM %s in %s/%s (~%s)?",
+			plan.Target.Name, plan.Name, plan.Project, plan.Zone, gcp.FormatKeepUp(plan.Cost.HourlyUSD))
+		if needPush {
+			msg = fmt.Sprintf("Build+push %s and create Spot %s VM %s in %s/%s (~%s)?",
+				imgRef, plan.Target.Name, plan.Name, plan.Project, plan.Zone, gcp.FormatKeepUp(plan.Cost.HourlyUSD))
+		}
+		if !confirmPref(msg, true) {
 			return fmt.Errorf("aborted")
+		}
+	}
+
+	if needPush {
+		if err := ensureLlamaImage(client, imgRef, plan.Image, *verbose); err != nil {
+			return err
 		}
 	}
 
@@ -382,23 +426,20 @@ func cmdGCPDeploy(args []string) error {
 	}
 
 	fmt.Fprintln(os.Stdout)
-	fmt.Fprintf(os.Stdout, "%s  %s  (%s Spot ~%s/hr)\n", green("Created"), cyan(plan.Name), plan.Target.Name, fmt.Sprintf("$%.2f", plan.Cost.HourlyUSD))
+	fmt.Fprintf(os.Stdout, "%s  %s  (%s Spot ~%s)\n", green("Created"), cyan(plan.Name), plan.Target.Name, gcp.FormatKeepUp(plan.Cost.HourlyUSD))
 	printKV(os.Stdout, "project", plan.Project)
 	printKV(os.Stdout, "zone", plan.Zone)
 	printKV(os.Stdout, "model", bold(modelID))
-	printKV(os.Stdout, "openai", cyan(plan.OpenAIHint))
+	printKV(os.Stdout, "openai", cyan(gcp.LocalOpenAIURL(gcp.LocalTunnelPort)))
 	if plan.KeepUp {
 		printKV(os.Stdout, "idle", yellow("keep-up — NO stop-on-idle; runhug gcp stop when done"))
 	} else {
 		printKV(os.Stdout, "idle", fmt.Sprintf("%ds stop-on-idle", plan.IdleSeconds))
 	}
-	printKV(os.Stdout, "bearer", "stored under ~/.config/runhug/gcp/ (not in image)")
 	fmt.Fprintln(os.Stdout)
 	commands(os.Stdout, "Next:",
-		fmt.Sprintf("%s --local-port %d", plan.TunnelHint, gcp.LocalTunnelPort),
-		"export OPENAI_API_KEY=$(cat ~/.config/runhug/gcp/"+plan.Name+".token)",
-		fmt.Sprintf("curl -H \"Authorization: Bearer $OPENAI_API_KEY\" %s/models", gcp.LocalOpenAIURL(gcp.LocalTunnelPort)),
-		"runhug gcp stop "+plan.Name+" --project "+plan.Project+" --zone "+plan.Zone,
+		"runhug run",
+		"runhug gcp stop",
 	)
 	return nil
 }
@@ -406,6 +447,130 @@ func cmdGCPDeploy(args []string) error {
 func gcpWeightGB(m hf.Model, _ string) float64 {
 	est := inspectEstimate(m, hf.DetectFormat(m), 8192)
 	return est.WeightGB
+}
+
+func redirectNonGGUFToRunpod(modelID string, engine hf.Engine, yes, dry, asJSON, estimate, verbose bool) error {
+	fmt.Fprintf(os.Stderr, "%s %s is %s (GCP llama.cpp needs GGUF)\n", dim("note:"), modelID, engine)
+	if !dry && !yes {
+		if !promptOK() {
+			return fmt.Errorf("%s is not GGUF — pass --yes to deploy on RunPod", modelID)
+		}
+		if !confirmPref(fmt.Sprintf("Deploy %s on RunPod serverless instead?", modelID), true) {
+			return fmt.Errorf("aborted")
+		}
+	}
+	fmt.Fprintf(os.Stderr, "%s switching to RunPod (vLLM)…\n", dim("note:"))
+	return cmdDeploy(runpodArgsFromGCP(modelID, yes, dry, asJSON, estimate, verbose))
+}
+
+func runpodArgsFromGCP(modelID string, yes, dry, asJSON, estimate, verbose bool) []string {
+	args := []string{modelID}
+	if yes {
+		args = append(args, "--yes")
+	}
+	if dry {
+		args = append(args, "--dry-run")
+	}
+	if asJSON {
+		args = append(args, "--json")
+	}
+	if estimate {
+		args = append(args, "--estimate")
+	}
+	if verbose {
+		args = append(args, "--verbose")
+	}
+	return args
+}
+
+func ensureLlamaImage(client *gcp.Client, imgRef string, cfg gcp.ImageConfig, verbose bool) error {
+	parent, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
+	defer cancel()
+	ctx, cancelJob := context.WithCancel(parent)
+	defer cancelJob()
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc, os.Interrupt)
+	defer signal.Stop(sigc)
+	go func() {
+		select {
+		case <-sigc:
+			cancelJob()
+		case <-ctx.Done():
+		}
+	}()
+
+	printEnsureStep(os.Stderr, 1, 4, "registry", "create Artifact Registry repo if missing")
+	if err := client.EnsureDockerRepo(ctx, imgRef); err != nil {
+		return err
+	}
+	printEnsureStep(os.Stderr, 2, 4, "auth", "gcloud auth configure-docker")
+	if err := client.ConfigureDockerAuth(ctx, imgRef); err != nil {
+		return err
+	}
+
+	quiet := promptOK() && !verbose
+	var out io.Writer
+	if quiet {
+		f, err := os.CreateTemp("", "runhug-docker-*.log")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = f.Close(); _ = os.Remove(f.Name()) }()
+		log := &quietLog{file: f}
+		out = log
+		restore := startJobKeys(ctx, cancelJob, log)
+		defer restore()
+	}
+
+	started := time.Now()
+	curN, curLabel := 3, "build"
+	var stepMu sync.Mutex
+	printEnsureStep(os.Stderr, 3, 4, "build", "llama.cpp cuda image  "+jobKeysHint())
+	stopTick := make(chan struct{})
+	if quiet {
+		go func() {
+			t := time.NewTicker(8 * time.Second)
+			defer t.Stop()
+			for {
+				select {
+				case <-stopTick:
+					return
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					stepMu.Lock()
+					n, lab := curN, curLabel
+					stepMu.Unlock()
+					printJobElapsed(started, n, 4, lab, "working")
+				}
+			}
+		}()
+		defer close(stopTick)
+	}
+
+	res, err := gcp.Push(ctx, gcp.PushRequest{
+		Image:  imgRef,
+		Config: cfg,
+		Out:    out,
+		Quiet:  quiet,
+		OnStep: func(name string) {
+			if name != "push" {
+				return
+			}
+			stepMu.Lock()
+			curN, curLabel = 4, "push"
+			stepMu.Unlock()
+			printEnsureStep(os.Stderr, 4, 4, "push", imgRef+"  "+jobKeysHint())
+		},
+	})
+	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("cancelled")
+		}
+		return err
+	}
+	printEnsureStep(os.Stderr, 4, 4, "ready", green("pushed "+res.Image))
+	return nil
 }
 
 func resolveGCPProject(ctx context.Context, client *gcp.Client, interactive bool) (string, error) {
@@ -476,7 +641,7 @@ func printGCPPlan(plan *gcp.DeployPlan, hasHF bool, showCost, verbose bool) {
 	} else {
 		printKV(os.Stdout, "idle", yellow(fmt.Sprintf("%ds stop-on-idle", plan.IdleSeconds)))
 	}
-	printKV(os.Stdout, "bind", "127.0.0.1:"+strconv.Itoa(gcp.ServerPort)+" + SSH tunnel")
+	printKV(os.Stdout, "bind", "SSH tunnel → "+gcp.LocalOpenAIURL(gcp.LocalTunnelPort))
 	if verbose {
 		printKV(os.Stdout, "container", dim(plan.ContainerImage))
 		net := "no-address (need Cloud NAT)"
@@ -519,13 +684,11 @@ func cmdGCPTunnel(args []string) error {
 	if err := client.RequireADC(ctx); err != nil {
 		return err
 	}
-	if tok, err := gcp.LoadBearer(name); err == nil && tok != "" {
-		fmt.Fprintf(os.Stderr, "%s export OPENAI_API_KEY=%s\n", dim("→"), tok)
-		fmt.Fprintf(os.Stderr, "%s curl -H \"Authorization: Bearer $OPENAI_API_KEY\" %s/models\n", dim("→"), gcp.LocalOpenAIURL(*local))
+	if _, err := gcp.LoadBearer(name); err == nil {
+		fmt.Fprintf(os.Stderr, "%s tunnel %s → %s  then %s\n", dim("→"), name, gcp.LocalOpenAIURL(*local), cyan("runhug run"))
 	} else {
-		fmt.Fprintf(os.Stderr, "%s no stored bearer for %s — pass Authorization manually\n", yellow("warning:"), name)
+		fmt.Fprintf(os.Stderr, "%s no stored bearer for %s — %s still works after connect\n", yellow("warning:"), name, cyan("runhug run"))
 	}
-	fmt.Fprintf(os.Stderr, "%s SSH tunnel %s → 127.0.0.1:%d (guest loopback; preserves 127.0.0.1 bind)\n", dim("→"), name, *local)
 	return client.StartTunnel(ctx, gcp.TunnelOpts{
 		Project:    proj,
 		Zone:       z,
@@ -664,6 +827,8 @@ func cmdGCPPush(args []string) error {
 	dir := fs.String("dir", "", "build context directory (default: temp)")
 	platform := fs.String("platform", gcp.DefaultImagePlatform, "docker build --platform")
 	dry := fs.Bool("dry-run", false, "print docker commands only")
+	verbose := fs.Bool("verbose", false, "stream docker build/push output")
+	fs.BoolVar(verbose, "v", false, "alias for --verbose")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -671,31 +836,36 @@ func cmdGCPPush(args []string) error {
 	if imgRef == "" {
 		imgRef = strings.TrimSpace(os.Getenv("RUNHUG_GCP_IMAGE"))
 	}
+	client := gcp.NewClient()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
+	defer cancel()
 	if imgRef == "" {
-		return fmt.Errorf("usage: runhug gcp push --image REGION-docker.pkg.dev/PROJECT/runhug/llama-server:cuda (or set RUNHUG_GCP_IMAGE)")
+		proj := client.CurrentProject(ctx)
+		imgRef = gcp.DefaultLlamaImage(proj, gcp.DefaultRegion)
+		if imgRef == "" {
+			return fmt.Errorf("pass --image or set gcloud config project / RUNHUG_GCP_IMAGE")
+		}
+		fmt.Fprintf(os.Stderr, "%s image %s\n", dim("note:"), imgRef)
 	}
 	if fs.NArg() >= 1 && strings.TrimSpace(*model) == "" {
 		*model = fs.Arg(0)
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
-	defer cancel()
-
-	res, err := gcp.Push(ctx, gcp.PushRequest{
-		Image:    imgRef,
-		Dir:      strings.TrimSpace(*dir),
-		Platform: strings.TrimSpace(*platform),
-		DryRun:   *dry,
-		Config: gcp.ImageConfig{
-			ModelID:     strings.TrimSpace(*model),
-			GGUFFile:    strings.TrimSpace(*gguf),
-			IdleSeconds: *idle,
-		},
-	})
-	if err != nil {
-		return err
+	cfg := gcp.ImageConfig{
+		ModelID:     strings.TrimSpace(*model),
+		GGUFFile:    strings.TrimSpace(*gguf),
+		IdleSeconds: *idle,
 	}
 	if *dry {
+		res, err := gcp.Push(ctx, gcp.PushRequest{
+			Image:    imgRef,
+			Dir:      strings.TrimSpace(*dir),
+			Platform: strings.TrimSpace(*platform),
+			DryRun:   true,
+			Config:   cfg,
+		})
+		if err != nil {
+			return err
+		}
 		heading(os.Stdout, "gcp push (dry-run — local docker, no Cloud Build)")
 		printKV(os.Stdout, "dir", res.Dir)
 		printKV(os.Stdout, "image", res.Image)
@@ -705,9 +875,7 @@ func cmdGCPPush(args []string) error {
 		fmt.Fprintln(os.Stdout, strings.Join(res.PushCmd, " "))
 		return nil
 	}
-	fmt.Fprintf(os.Stdout, "%s pushed %s\n", green("OK"), res.Image)
-	fmt.Fprintf(os.Stdout, "Next: runhug gcp deploy <org/model> --project <id> --image %s --yes\n", res.Image)
-	return nil
+	return ensureLlamaImage(client, imgRef, cfg, *verbose)
 }
 
 func cmdGCPOpenCode(args []string) error {

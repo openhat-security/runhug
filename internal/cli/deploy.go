@@ -27,14 +27,15 @@ func cmdDeploy(args []string) error {
 		return nil
 	}
 	// Peek --provider before RunPod flag parse so GCP-only flags (--project, …) work.
-	if p, ok := peekProvider(args); ok {
-		switch strings.ToLower(p) {
+	wantProvider, hasProvider := peekProvider(args)
+	if hasProvider {
+		switch strings.ToLower(wantProvider) {
 		case "gcp", "google", "gce":
 			return cmdGCPDeploy(stripProviderFlag(args))
 		case "", "runpod":
 			// continue
 		default:
-			return fmt.Errorf("unknown --provider %q (want runpod or gcp)", p)
+			return fmt.Errorf("unknown --provider %q (want runpod or gcp)", wantProvider)
 		}
 	}
 	fs := newFlagSet("deploy")
@@ -76,15 +77,15 @@ func cmdDeploy(args []string) error {
 		printDeployHelp(os.Stderr)
 		return fmt.Errorf("model required")
 	}
-	modelID := fs.Arg(0)
-	env := config.Load()
-	if err := env.RequireRunpod(); err != nil {
+	modelID, err := resolveModelArg(fs.Arg(0))
+	if err != nil {
 		return err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
+	env := config.Load()
 	hfClient := hf.New(env.HFToken)
 	model, err := hfClient.Get(ctx, modelID)
 	if err != nil {
@@ -93,7 +94,14 @@ func cmdDeploy(args []string) error {
 	modelID = model.RepoID()
 	format := hf.DetectFormat(*model)
 	if format.Engine == hf.EngineGGUF && !*force {
-		return fmt.Errorf("%s is GGUF; vLLM will not load it. Use a llama.cpp worker, or pass --force", modelID)
+		if hasProvider && strings.EqualFold(wantProvider, "runpod") {
+			return fmt.Errorf("%s is GGUF; RunPod vLLM cannot load it — drop --provider runpod to use GCP llama.cpp, or pass --force", modelID)
+		}
+		fmt.Fprintf(os.Stderr, "%s %s is GGUF — deploying on GCP Spot llama.cpp\n", dim("note:"), modelID)
+		return cmdGCPDeploy(gcpArgsFromRunpodDeploy(modelID, *yes, *dry, *asJSON, *estimate, *verbose))
+	}
+	if err := env.RequireRunpod(); err != nil {
+		return err
 	}
 	if model.IsGated() && env.HFToken == "" && !*force {
 		return fmt.Errorf("%s is gated; set HF_TOKEN or pass --force (the worker will 403 on download)", modelID)
@@ -293,7 +301,7 @@ func cmdDeploy(args []string) error {
 
 func printDeployHelp(w io.Writer) {
 	helpUsage(w, "runhug deploy <org/model>")
-	fmt.Fprintln(w, dim("Serverless vLLM on RunPod · optional GCP Spot via --provider gcp"))
+	fmt.Fprintln(w, dim("Serverless vLLM on RunPod · GGUF uses GCP Spot llama.cpp"))
 	fmt.Fprintln(w)
 
 	helpSection(w, "flags")
@@ -307,6 +315,10 @@ func printDeployHelp(w io.Writer) {
 
 	fmt.Fprintf(w, "%s %s\n", dim("also:"), cyan("runhug deploy --provider gcp <model>"))
 	fmt.Fprintf(w, "%s %s\n", dim("example:"), cyan("runhug deploy Qwen/Qwen2.5-7B-Instruct --dry-run"))
+}
+
+func gcpArgsFromRunpodDeploy(modelID string, yes, dry, asJSON, estimate, verbose bool) []string {
+	return runpodArgsFromGCP(modelID, yes, dry, asJSON, estimate, verbose)
 }
 
 func inspectEstimate(m hf.Model, format hf.Format, maxLen int) sizing.Estimate {

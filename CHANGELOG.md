@@ -7,10 +7,60 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-10-07
+
+### Added
+- VHS demos: `assets/run.tape` launches Claude Code + OpenCode for real; `assets/chat.tape` shows interactive `runhug run` (wiki Demo-Chat / Demo-Run).
+- `make install` runs `go install` and stamps `{semver}-localN`, incrementing N from the last GOBIN binary for that semver.
+- `runhug run` chat: thinking indicator before first token; slash commands `/help`, `/status`, `/metrics`, `/logs`, `/model`, `/tools`, `/cwd`, `/clear`, `/exit`.
+- `/metrics` detailed colored GPU/CPU/RAM dashboard; `/metrics on|off` pins a compact strip; `/metrics full` live fullscreen (q to leave). `runhug metrics` is the same live view for a second terminal.
+- `/tools` explains each agent tool (`list_dir`, `read_file`, `write_file`, `edit_file`, `glob`, `bash`) and toggles them.
+- Interactive prompt: `/` suggestions, Tab complete, ↑/↓ input history, drag-select copies, Ctrl-V paste; Ctrl-C clears the line while typing and cancels an in-flight reply (does not quit); Ctrl-D or `/exit` quits.
+- Chat sessions persist under `~/.config/runhug/sessions` and resume on the next `runhug run` with the transcript on screen and the same messages sent to the model (`/sessions`, `/resume`, `/new`, `--session`, `--new`).
+- Local agent tools (default on): `list_dir`, `read_file`, `write_file`, `edit_file`, `glob`, `bash` via OpenAI tool calls; `/tools off` for plain streaming chat. Tool calls print a short summary (path/command) and format `list_dir` / `glob` as an `ls`-style grid instead of truncated JSON.
+- `/full` is a runhug-framed alt screen (wordmark, cyan gutter, truncating status, pinned footer). `/mini` restores scrollback.
+- `runhug run` plan/agent modes (`/plan`, `/agent`): plan is read-only (`list_dir` / `read_file` / `glob`); `/agent` implements with tools.
+- Mutating tools prompt with clickable chips (also arrows / y n a / Esc): Allow, Deny, Always, Never. `/perm ask|allow|deny` and `/settings` persist to `settings.json`.
+- `/settings` switches model (ensure + tunnel) and can upsize GPU: RunPod PATCH endpoint pools, GCP stop / set-machine-type / guest accelerator / start / retunnel. Local points at `runhug gpu set`.
+- GCP/Run `ensure` prints live status: gcloud account, instance describe/start, SSH vs IAP tunnel, and `/v1/models` attempts with elapsed time and last HTTP error (no more silent hang on “waiting /v1/models”).
+- GCP chat tunnels to `127.0.0.1:18080`, not `:8080`. A local Express (or other) app on 8080 is no longer mistaken for llama.cpp.
+- After idle stop / dead tunnel, `runhug run` wakes the GCP/RunPod instance with the same ensure steps, then retries the message. Chat errors print in the transcript and copy to the clipboard (`/copy`).
+- `runhug gcp deploy` (and `deploy --provider gcp`) uses `{region}-docker.pkg.dev/{project}/runhug/llama-server:cuda` when `--image` is omitted. If the tag is missing, one y/n builds+pushes it (AR repo + `gcloud auth configure-docker`) then creates the VM. Non-GGUF Hub repos y/n onto RunPod serverless instead of dumping commands.
+- After `runhug search`, type a row `#` to inspect that model (`deploy N`, `copy N`, or Enter to skip). The same numbers work on the next `runhug inspect 3` / `deploy 3`. `deploy` of a GGUF repo uses GCP Spot llama.cpp (not RunPod vLLM).
+
+### Changed
+- `inspect` Next is `deploy` (GCP for GGUF) and `recommend gpu`, not `init` or `search`. `runhug init` is removed (`packs install` / `local add` / `deploy`).
+- GCP deploy Next is `runhug run` and `runhug gcp stop` (last instance from the registry). No tunnel/curl/export one-liners.
+- GCP llama-server default context is **8192** (32k KV OOMs 30B-class Q4 on L4 24GB).
+
+### Fixed
+- `runhug run` no longer polls `/v1/models` with `connection reset by peer` forever: guest docker/startup is shown, and if the VM has no Cloud NAT it gets an ephemeral IP and a reset so docker/GGUF can download.
+- `gcp deploy` uses an ephemeral external IP when the project has no Cloud NAT (no-address VMs cannot apt-install docker or pull GGUF).
+- Guest docker install prefers Ubuntu `docker.io` and forces apt IPv4.
+- `inspect` / `deploy` of a search row number no longer calls Hugging Face with `"3"` (that 401’d). A bare `#` requires `./bin/runhug search` first.
+- `runhug run` streams model reasoning (`thinking>`) then the answer; tool rounds stream too instead of freezing on `thinking…`.
+- `/full` wheel scrolls chat (↑/↓ still cycle input history). `/mini` and `/full` replay the same transcript instead of blanking the conversation.
+- Invalid llama.cpp tool-call JSON is retried without stream, not treated as “tools unsupported”.
+- Tool rounds always send `content` on user/tool messages so llama.cpp does not 400 with “All non-assistant messages must contain 'content'”.
+- When llama.cpp rejects a huge `write_file` tool JSON, chat retries with a clean no-tools prompt and writes from a `FILEPATH:` / markdown / raw source dump instead of aborting.
+- `runhug run` no longer treats every tool-JSON error as a file dump (the old “tool JSON failed” loop). Dump is only for continue/finish of an incomplete write; other turns answer without tools. The coding detector no longer matches the word “writes” inside runhug’s own addendum.
+- `runhug run` tools honor a user path focus (last dropped/quoted path), refuse `write_file` overwrites (use `edit_file` / `append_file`), and normalize absolute/glued drag-drop paths to the workspace.
+- `read_file` on a directory lists it instead of erroring `is a directory`. Agent turns cap at 8 tool calls and skip repeat package listings so llama.cpp does not loop the whole `internal/` tree until tool JSON breaks.
+- `/full` wheel and PgUp/PgDn scroll the transcript; drag-copy uses the same visible rows (including after scroll). `ls` / `pwd` list the workspace immediately instead of continuing a prior write. Agent turns print a files-this-turn summary. Leading-slash tool paths like `/c2edux/...` map into the repo instead of escaping cwd.
+- Chat shows OpenCode-style context usage (`ctx  ███░░░░░░░  32%  2.5k/8k`) after each turn, on the status strip, in `/full`, and via `/context`. `/context up` (or `/context 65536`) raises llama.cpp `-c` on GCP by recreating the container. `/gpu` / `/gpu up` / `/gpu A100` resizes the Spot VM. Uses API `usage` when llama.cpp/OpenAI send it; otherwise estimates.
+- `/gpu` quotes Google Cloud Billing Spot GPU SKUs (ADC). Unpublished SKUs are omitted. 8× machines × per-GPU SKU. The picker uses a shared column table.
+- `runhug cost` tables every registry instance (up/down), GPU SKU or stored $/hr, NOW burn, and 24/7 day/month — plus totals and per-backend sums.
+
+### Fixed
+- GCP `/gpu` resize detaches guest accelerators **before** `set-machine-type`, so L4 (nvidia-l4 on G2) can move to A100/A2.
+
 ## [0.4.3] - 2026-10-03
 
 ### Added
 - `runhug run` / `start` ensure cloud backends are up before chat: GCP starts the Spot VM + SSH tunnel, Runpod waits on workers, with step progress and cold-start ETA. Local ollama is started when needed.
+
+### Fixed
+- GCP background tunnel no longer hangs on SSH host-key prompts (`BatchMode` + `ExitOnForwardFailure`); failures surface stderr and retry via IAP.
 
 ### Changed
 - `runhug run` endpoint picker is a color-coded truncated table (`#` / `MODEL` / `BACKEND` / `WHERE` / `DETAIL`).

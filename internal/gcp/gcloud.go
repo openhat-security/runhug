@@ -121,6 +121,19 @@ func (c *Client) RequireADC(ctx context.Context) error {
 	return fmt.Errorf("GCP Application Default Credentials missing — run `gcloud auth application-default login` (least-privilege user ADC; no service-account key files)")
 }
 
+// CurrentAccount returns the active gcloud account email, if any.
+func (c *Client) CurrentAccount(ctx context.Context) string {
+	out, err := c.runner().Run(ctx, "config", "get-value", "account")
+	if err != nil {
+		return ""
+	}
+	a := strings.TrimSpace(out)
+	if a == "(unset)" || a == "" {
+		return ""
+	}
+	return a
+}
+
 // CurrentProject returns the active gcloud config project, if any.
 func (c *Client) CurrentProject(ctx context.Context) string {
 	out, err := c.runner().Run(ctx, "config", "get-value", "project")

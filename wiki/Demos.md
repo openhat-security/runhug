@@ -10,7 +10,8 @@ Watch a clip, then run the same steps yourself. Each page has a **Try it yoursel
 | [Search](Demo-Search) | Packs, search, recommend, inspect |
 | [Deploy](Demo-Deploy) | GPU catalog + RunPod/GCP dry-run |
 | [Heretic](Demo-Heretic) | Abliteration dry-run |
-| [Run](Demo-Run) | Local engines, chat, agents, proxy |
+| [Agents](Demo-Run) | Wire Claude Code + OpenCode |
+| [Chat](Demo-Chat) | Built-in `runhug run` CLI |
 | [Full](Demo-Full) | All of the above in order |
 
 <p>
@@ -22,7 +23,10 @@ Watch a clip, then run the same steps yourself. Each page has a **Try it yoursel
 <img src="https://raw.githubusercontent.com/openhat-security/runhug/main/assets/screenshots/heretic.gif" alt="heretic" width="49%"/>
 </p>
 <p>
-<img src="https://raw.githubusercontent.com/openhat-security/runhug/main/assets/screenshots/run.gif" alt="run" width="49%"/>
+<img src="https://raw.githubusercontent.com/openhat-security/runhug/main/assets/screenshots/run.gif" alt="agents" width="49%"/>
+<img src="https://raw.githubusercontent.com/openhat-security/runhug/main/assets/screenshots/chat.gif" alt="chat" width="49%"/>
+</p>
+<p>
 <img src="https://raw.githubusercontent.com/openhat-security/runhug/main/assets/screenshots/runhug-demo.gif" alt="full" width="49%"/>
 </p>
 

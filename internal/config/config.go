@@ -10,16 +10,16 @@ import (
 )
 
 const (
-	EnvRunpodAPIKey  = "RUNPOD_API_KEY"
-	EnvHFToken       = "HF_TOKEN"
-	EnvConfig        = "RUNHUG_CONFIG"
-	EnvConfigLegacy  = "RVP_CONFIG"
-	EnvUpdateLimit   = "RUNHUG_UPDATE_LIMIT"
+	EnvRunpodAPIKey    = "RUNPOD_API_KEY"
+	EnvHFToken         = "HF_TOKEN"
+	EnvConfig          = "RUNHUG_CONFIG"
+	EnvConfigLegacy    = "RVP_CONFIG"
+	EnvUpdateLimit     = "RUNHUG_UPDATE_LIMIT"
 	DefaultUpdateLimit = 2000
 
-	appDirName     = "runhug"
-	prevAppDirName = "runhug-cli" // immediate predecessor config dir
-	oldAppDirName  = "runpod-vllm-proxy"
+	appDirName        = "runhug"
+	prevAppDirName    = "runhug-cli" // immediate predecessor config dir
+	oldAppDirName     = "runpod-vllm-proxy"
 	storedKeyName     = "runpod.key"
 	storedHFTokenName = "hf.token"
 	settingsFileName  = "settings.json"
@@ -298,19 +298,26 @@ func loadStoredHFToken() string {
 
 // GPUPreference is the user's saved default accelerator for deploy / local flows.
 type GPUPreference struct {
-	Provider  string  `json:"provider"` // local | runpod | gcp
-	Key       string  `json:"key"`      // pool id, L4/T4, or local matched name
-	Name      string  `json:"name,omitempty"`
-	MemoryGB  float64 `json:"memory_gb,omitempty"`
+	Provider string  `json:"provider"` // local | runpod | gcp
+	Key      string  `json:"key"`      // pool id, L4/T4, or local matched name
+	Name     string  `json:"name,omitempty"`
+	MemoryGB float64 `json:"memory_gb,omitempty"`
 }
 
 // Settings holds optional CLI defaults under ~/.config/runhug/settings.json.
 type Settings struct {
-	NoColor        bool            `json:"no_color"`
-	UpdateLimit    *int            `json:"update_limit,omitempty"` // Hub update row cap; 0=unlimited; nil=default
-	AdvisorBaseURL string          `json:"advisor_base_url,omitempty"`
-	AdvisorModel   string          `json:"advisor_model,omitempty"`
-	GPU            *GPUPreference  `json:"gpu,omitempty"`
+	NoColor        bool   `json:"no_color"`
+	UpdateLimit    *int   `json:"update_limit,omitempty"` // Hub update row cap; 0=unlimited; nil=default
+	AdvisorBaseURL string `json:"advisor_base_url,omitempty"`
+	AdvisorModel   string `json:"advisor_model,omitempty"`
+	// EmbedModel is the registry id used for POST /v1/embeddings when the
+	// requested model is a chat checkpoint (or unset). Prefer nomic-embed-*.
+	EmbedModel string         `json:"embed_model,omitempty"`
+	GPU        *GPUPreference `json:"gpu,omitempty"`
+	// RunMode is "agent" (default) or "plan" for runhug run.
+	RunMode string `json:"run_mode,omitempty"`
+	// RunPerm is "ask" (default), "allow", or "deny" for mutating tools.
+	RunPerm string `json:"run_perm,omitempty"`
 }
 
 func SettingsPath() (string, error) {
@@ -355,7 +362,6 @@ func SaveSettings(s Settings) error {
 	}
 	return os.Chmod(path, 0o600)
 }
-
 
 // ResolveUpdateLimit returns the Hub update row cap.
 // Precedence: flag (>=0) > RUNHUG_UPDATE_LIMIT > settings.update_limit > DefaultUpdateLimit (2000).

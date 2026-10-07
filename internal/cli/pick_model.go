@@ -155,67 +155,42 @@ const (
 
 func printRegistryPickTable(w io.Writer, entries []registryPickEntry) {
 	fmt.Fprintln(w, bold("Endpoints"))
-	modelW, whereW, detailW := 5, 5, 6 // min = header lengths MODEL/WHERE/DETAIL
-	for _, e := range entries {
-		if n := len(e.HFRepo); n > modelW {
-			modelW = n
-		}
-		if n := len(e.Where); n > whereW {
-			whereW = n
-		}
-		if n := len(e.Extra); n > detailW {
-			detailW = n
-		}
+	cols := []tableCol{
+		{Title: "#", Min: pickColNum, Max: pickColNum, Right: true},
+		{Title: "MODEL", Min: 5, Max: pickColModel},
+		{Title: "BACKEND", Min: pickColBackend, Max: pickColBackend},
+		{Title: "WHERE", Min: 5, Max: pickColWhere},
+		{Title: "DETAIL", Min: 6, Max: pickColDetail},
 	}
-	if modelW > pickColModel {
-		modelW = pickColModel
-	}
-	if whereW > pickColWhere {
-		whereW = pickColWhere
-	}
-	if detailW > pickColDetail {
-		detailW = pickColDetail
-	}
-	fmt.Fprintf(w, "  %s  %s  %s  %s  %s\n",
-		dim(padRight("#", pickColNum)),
-		dim(padRight("MODEL", modelW)),
-		dim(padRight("BACKEND", pickColBackend)),
-		dim(padRight("WHERE", whereW)),
-		dim(padRight("DETAIL", detailW)),
-	)
+	rows := make([][]tableCell, len(entries))
 	for i, e := range entries {
-		fmt.Fprintf(w, "  %s  %s  %s  %s  %s\n",
-			cyan(padRight(strconv.Itoa(i+1), pickColNum)),
-			bold(padRight(truncateRunes(e.HFRepo, modelW), modelW)),
-			colorBackend(padRight(truncateRunes(e.Kind, pickColBackend), pickColBackend), e.Kind),
-			dim(padRight(truncateRunes(e.Where, whereW), whereW)),
-			dim(padRight(truncateRunes(e.Extra, detailW), detailW)),
-		)
+		kind := e.Kind
+		rows[i] = []tableCell{
+			styledCell(strconv.Itoa(i+1), cyan),
+			styledCell(e.HFRepo, bold),
+			styledCell(e.Kind, func(s string) string { return colorBackend(s, kind) }),
+			styledCell(e.Where, dim),
+			styledCell(e.Extra, dim),
+		}
 	}
+	printTable(w, cols, rows)
 	fmt.Fprintln(w)
 }
 
 func printRemoteModelPickTable(w io.Writer, ids []string) {
 	fmt.Fprintln(w, bold("Models"))
-	modelW := 5
-	for _, id := range ids {
-		if n := len(id); n > modelW {
-			modelW = n
+	cols := []tableCol{
+		{Title: "#", Min: pickColNum, Max: pickColNum, Right: true},
+		{Title: "MODEL", Min: 5, Max: pickColModel},
+	}
+	rows := make([][]tableCell, len(ids))
+	for i, id := range ids {
+		rows[i] = []tableCell{
+			styledCell(strconv.Itoa(i+1), cyan),
+			styledCell(id, bold),
 		}
 	}
-	if modelW > pickColModel {
-		modelW = pickColModel
-	}
-	fmt.Fprintf(w, "  %s  %s\n",
-		dim(padRight("#", pickColNum)),
-		dim(padRight("MODEL", modelW)),
-	)
-	for i, id := range ids {
-		fmt.Fprintf(w, "  %s  %s\n",
-			cyan(padRight(strconv.Itoa(i+1), pickColNum)),
-			bold(padRight(truncateRunes(id, modelW), modelW)),
-		)
-	}
+	printTable(w, cols, rows)
 	fmt.Fprintln(w)
 }
 

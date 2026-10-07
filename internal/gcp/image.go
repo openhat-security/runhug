@@ -29,6 +29,8 @@ type ImageConfig struct {
 	Context int
 	// GPULayers (-ngl); -1 = all.
 	GPULayers int
+	// Embeddings adds llama-server --embeddings (required for POST /v1/embeddings).
+	Embeddings bool
 	// Optional llama-server sampling defaults (from runhug hparams).
 	Temperature       string
 	TopP              string
@@ -48,8 +50,8 @@ func (c ImageConfig) withDefaults() ImageConfig {
 		c.IdleSeconds = 600 // 10m stop-on-idle
 	}
 	if c.Context <= 0 {
-		// OpenCode agent prompts routinely exceed 8k; 32k fits Qwen-class GGUFs.
-		c.Context = 32768
+		// 8k KV fits 30B-class Q4 on L4 24GB; 32k OOMs that class.
+		c.Context = 8192
 	}
 	if c.GPULayers == 0 {
 		c.GPULayers = -1
@@ -107,6 +109,7 @@ ENV HOST=127.0.0.1 \
     IDLE_SECONDS=` + fmt.Sprintf("%d", cfg.IdleSeconds) + ` \
     CONTEXT=` + fmt.Sprintf("%d", cfg.Context) + ` \
     NGL=` + fmt.Sprintf("%d", cfg.GPULayers) + ` \
+    EMBEDDINGS=` + map[bool]string{true: "1", false: "0"}[cfg.Embeddings] + ` \
     MODEL_DIR=/models
 # Optional build-time hints (overridable at runtime; never secrets):
 `)
@@ -142,6 +145,7 @@ PORT="${PORT:-` + fmt.Sprintf("%d", cfg.Port) + `}"
 IDLE_SECONDS="${IDLE_SECONDS:-` + fmt.Sprintf("%d", cfg.IdleSeconds) + `}"
 CONTEXT="${CONTEXT:-` + fmt.Sprintf("%d", cfg.Context) + `}"
 NGL="${NGL:--1}"
+EMBEDDINGS="${EMBEDDINGS:-` + map[bool]string{true: "1", false: "0"}[cfg.Embeddings] + `}"
 MODEL_DIR="${MODEL_DIR:-/models}"
 MODEL_ID="${MODEL_ID:-}"
 GGUF_FILE="${GGUF_FILE:-}"
@@ -225,6 +229,9 @@ fi
 
 echo "runhug: llama-server $GGUF_PATH on ${HOST}:${PORT} (idle=${IDLE_SECONDS}s)" >&2
 ARGS=(-m "$GGUF_PATH" --host "$HOST" --port "$PORT" -c "$CONTEXT" -ngl "$NGL" --api-key "$API_KEY")
+if [[ "${EMBEDDINGS:-}" == "1" || "${EMBEDDINGS:-}" == "true" ]]; then
+  ARGS+=(--embeddings)
+fi
 if [[ -n "${TEMP:-}" ]]; then ARGS+=(--temp "$TEMP"); fi
 if [[ -n "${TOP_P:-}" ]]; then ARGS+=(--top-p "$TOP_P"); fi
 if [[ -n "${TOP_K:-}" ]]; then ARGS+=(--top-k "$TOP_K"); fi
@@ -323,22 +330,28 @@ ensure_docker() {
     return 0
   fi
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -y
-  apt-get install -y --no-install-recommends ca-certificates curl gnupg
-  if ! command -v docker >/dev/null 2>&1; then
-    # Official Docker CE (amd64) — needed for --gpus via nvidia-container-toolkit.
-    install -m 0755 -d /etc/apt/keyrings
-    if [[ ! -f /etc/apt/keyrings/docker.asc ]]; then
-      curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-      chmod a+r /etc/apt/keyrings/docker.asc
+  mkdir -p /etc/apt/apt.conf.d
+  echo 'Acquire::ForceIPv4 "true";' >/etc/apt/apt.conf.d/99force-ipv4
+  apt-get update -y || true
+  apt-get install -y --no-install-recommends ca-certificates curl gnupg || true
+  if command -v docker >/dev/null 2>&1; then
+    systemctl enable --now docker || service docker start || true
+  else
+    # Ubuntu docker.io uses archive mirrors; Docker CE needs download.docker.com.
+    if ! apt-get install -y --no-install-recommends docker.io; then
+      install -m 0755 -d /etc/apt/keyrings
+      if [[ ! -f /etc/apt/keyrings/docker.asc ]]; then
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc || true
+        chmod a+r /etc/apt/keyrings/docker.asc || true
+      fi
+      . /etc/os-release
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
+        >/etc/apt/sources.list.d/docker.list
+      apt-get update -y || true
+      apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io || true
     fi
-    . /etc/os-release
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
-      >/etc/apt/sources.list.d/docker.list
-    apt-get update -y
-    apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io
+    systemctl enable --now docker || service docker start || true
   fi
-  systemctl enable --now docker || service docker start || true
   # NVIDIA Container Toolkit for --gpus all
   if ! dpkg -l nvidia-container-toolkit >/dev/null 2>&1; then
     curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
@@ -378,7 +391,7 @@ docker pull "$IMAGE"
 NAME="runhug-llama"
 docker rm -f "$NAME" 2>/dev/null || true
 
-ENV_ARGS=(-e HOST=127.0.0.1 -e PORT=8080 -e IDLE_SECONDS="$IDLE_SECONDS" -e CONTEXT=32768 -e NGL=-1)
+ENV_ARGS=(-e HOST=127.0.0.1 -e PORT=8080 -e IDLE_SECONDS="$IDLE_SECONDS" -e CONTEXT=` + fmt.Sprintf("%d", cfg.Context) + ` -e NGL=-1 -e EMBEDDINGS=` + map[bool]string{true: "1", false: "0"}[cfg.Embeddings] + `)
 if [[ -n "$MODEL_ID" ]]; then ENV_ARGS+=(-e "MODEL_ID=$MODEL_ID"); fi
 if [[ -n "$GGUF_FILE" ]]; then ENV_ARGS+=(-e "GGUF_FILE=$GGUF_FILE"); fi
 TEMP="$(meta_attr runhug-temp)"

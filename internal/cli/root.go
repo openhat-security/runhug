@@ -21,7 +21,7 @@ func Run(args []string) error {
 	case "wizard", "guide", "guided", "setup":
 		return cmdWizard(rest)
 	case "init":
-		return cmdInit(rest)
+		return fmt.Errorf("removed — use `runhug packs install` for the search index, `runhug local add` for a local model, or `runhug deploy` / `runhug recommend gpu`")
 	case "search":
 		return cmdSearch(rest)
 	case "packs":
@@ -62,6 +62,8 @@ func Run(args []string) error {
 		return cmdLocal(rest)
 	case "list", "deployments":
 		return cmdList(rest)
+	case "cost", "costs", "billing":
+		return cmdCost(rest)
 	case "use":
 		return cmdUse(rest)
 	case "url":
@@ -70,6 +72,8 @@ func Run(args []string) error {
 		return cmdProxy(rest)
 	case "run":
 		return cmdRun(rest)
+	case "metrics":
+		return cmdMetrics(rest)
 	case "start":
 		return cmdStart(rest)
 	case "delete":
@@ -118,7 +122,6 @@ func printUsage(w io.Writer, withDetails ...bool) {
 
 	helpSection(w, "setup")
 	helpCmd(w, "wizard", "guided first-run setup")
-	helpCmd(w, "init", "install search index packs")
 	helpCmd(w, "packs", "install / list / update index packs")
 	helpCmd(w, "gpu", "find + set gpu catalog & preference")
 	helpCmd(w, "config", "settings · connect / disconnect credentials")
@@ -137,6 +140,7 @@ func printUsage(w io.Writer, withDetails ...bool) {
 	helpCmd(w, "deploy <model>", "RunPod serverless (vLLM)")
 	helpCmd(w, "gcp", "GCP Spot GPUs")
 	helpCmd(w, "list", "show deployments")
+	helpCmd(w, "cost", "instance up/down + GPU $/hr totals")
 	fmt.Fprintln(w)
 
 	helpSection(w, "heretic")
@@ -146,6 +150,7 @@ func printUsage(w io.Writer, withDetails ...bool) {
 
 	helpSection(w, "run")
 	helpCmd(w, "run [model]", "chat REPL")
+	helpCmd(w, "metrics [model]", "live GPU / CPU / RAM dashboard")
 	helpCmd(w, "start claude|opencode", "point an agent at a deployment")
 	helpCmd(w, "local", "run models on this machine")
 	helpCmd(w, "proxy", "OpenAI proxy on :8080")

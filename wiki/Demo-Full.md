@@ -40,13 +40,18 @@ runhug heretic
 runhug heretic make Qwen/Qwen2.5-0.5B-Instruct --dry-run --no-upload
 ```
 
-### 5. Run — [Run](Demo-Run)
+### 5. Chat — [Chat](Demo-Chat)
 
 ```bash
-runhug local setup
-runhug run --help
-runhug start claude --no-launch --yes
-runhug proxy --help
+runhug run
+# type at the prompt; /exit or Ctrl-D to quit
+```
+
+### 6. Agents — [Agents](Demo-Run)
+
+```bash
+runhug start claude --yes
+runhug start opencode --yes
 ```
 
 ← [All demos](Demos) · [Setup](Setup)

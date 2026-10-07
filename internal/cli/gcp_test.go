@@ -57,6 +57,23 @@ func TestGCPHelpMentionsPush(t *testing.T) {
 	}
 }
 
+func TestRedirectNonGGUFRunpodArgs(t *testing.T) {
+	orig := promptOK
+	promptOK = func() bool { return false }
+	t.Cleanup(func() { promptOK = orig })
+	err := redirectNonGGUFToRunpod("Qwen/Qwen2.5-7B", "safetensors", false, false, false, false, false)
+	if err == nil || !strings.Contains(err.Error(), "not GGUF") {
+		t.Fatalf("got %v", err)
+	}
+	got := strings.Join(runpodArgsFromGCP("org/m", true, true, true, true, true), " ")
+	if got != "org/m --yes --dry-run --json --estimate --verbose" {
+		t.Fatalf("%q", got)
+	}
+	if strings.Join(gcpArgsFromRunpodDeploy("org/g", false, true, false, false, false), " ") != "org/g --dry-run" {
+		t.Fatal("gcp args")
+	}
+}
+
 func TestPeekProvider(t *testing.T) {
 	v, ok := peekProvider([]string{"--provider", "gcp", "m"})
 	if !ok || v != "gcp" {
