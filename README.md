@@ -6,7 +6,7 @@
 
 **Find the best model. Deploy it in minutes. Run it for pennies.**
 
-Website: **[runhug.devrecated.com](https://runhug.devrecated.com)** · Org: [openhat-security](https://github.com/openhat-security)
+Website: **[runhug.devrecated.com](https://runhug.devrecated.com)** · Youtube Demo: [youtube.com/runhug](https://www.youtube.com/watch?v=WEnywc8ZJl8) Org: [openhat-security](https://github.com/openhat-security)
 
 Search Hugging Face, deploy any checkpoint (RunPod serverless vLLM or GCP Spot llama.cpp), then chat via an OpenAI-compatible URL, Claude Code, or OpenCode — including abliterated **heretic** models trained in-CLI.
 
