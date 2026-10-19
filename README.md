@@ -116,6 +116,12 @@ Neither provider ships an anonymous open model URL. Auth differs by where the Op
 
 GCP soft locks: no Bearer baked into the image (metadata/`API_KEY` at runtime), IAP firewall scoped to Google’s IAP ranges, access via SSH local-forward — not a public `:8080`. Dogfood may opt into a public IP; the model port still requires the Bearer and still binds loopback unless you change the image.
 
+## Security defaults
+
+The local bridge and proxy listen on `127.0.0.1` only. Exposing them on another host needs
+`--allow-remote` plus a strong key (`RUNHUG_API_KEY` or `--generate-key`), sent as
+`Authorization: Bearer`. See [SECURITY.md](SECURITY.md#network-exposure-local-bridge-and-proxy).
+
 ## Tips
 
 - Plans print essentials by default. Pass `--verbose` / `-v` for cost assumptions, env dumps, and Dockerfile on GCP dry-run.

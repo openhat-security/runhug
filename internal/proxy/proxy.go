@@ -12,6 +12,7 @@ import (
 
 	"github.com/adamsiwiec1/runhug/internal/config"
 	"github.com/adamsiwiec1/runhug/internal/gcp"
+	"github.com/adamsiwiec1/runhug/internal/netguard"
 	"github.com/adamsiwiec1/runhug/internal/runpod"
 	"github.com/adamsiwiec1/runhug/internal/store"
 )
@@ -261,6 +262,16 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(b[i:])
+}
+
+// ListenAndServeGuarded applies runhug's exposure rules (see netguard) before
+// serving: loopback by default, fail closed off-loopback without a strong key,
+// refuse non-loopback peers unless allowRemote, require the key as a header.
+func ListenAndServeGuarded(addr string, h http.Handler, key string, allowRemote bool) error {
+	if err := netguard.CheckBind(addr, key, allowRemote); err != nil {
+		return err
+	}
+	return ListenAndServe(addr, netguard.Guard(h, key, allowRemote))
 }
 
 func ListenAndServe(addr string, h http.Handler) error {

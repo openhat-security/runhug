@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/adamsiwiec1/runhug/internal/bridge"
+	"github.com/adamsiwiec1/runhug/internal/netguard"
 	"github.com/adamsiwiec1/runhug/internal/version"
 )
 
@@ -31,7 +32,12 @@ func cmdStart(args []string) error {
 	bridgePort := fs.Int("bridge-port", 0, "local Anthropic→OpenAI bridge port (0 = ephemeral)")
 	dryRun := fs.Bool("dry-run", false, "print the opencode config JSON only (opencode)")
 	cfgPath := fs.String("config", "", "opencode config path (default ~/.config/opencode/opencode.json)")
+	expFlags := addExposureFlags(fs, "bridge-host", "bridge bind host (default 127.0.0.1; non-loopback needs --allow-remote and a key)")
 	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+	exp, err := expFlags.resolve()
+	if err != nil {
 		return err
 	}
 	if fs.NArg() < 1 {
@@ -46,7 +52,7 @@ func cmdStart(args []string) error {
 
 	switch agent {
 	case "claude":
-		return startClaude(registryKey, *baseURL, *apiKeyEnv, *serveModel, *bridgePort, *noLaunch, skipPrompt)
+		return startClaude(registryKey, *baseURL, *apiKeyEnv, *serveModel, *bridgePort, exp, *noLaunch, skipPrompt)
 	case "opencode":
 		return startOpenCode(registryKey, *baseURL, *apiKeyEnv, *serveModel, *noLaunch, *dryRun, *cfgPath, skipPrompt)
 	case "codex":
@@ -56,7 +62,12 @@ func cmdStart(args []string) error {
 	}
 }
 
-func startClaude(registryKey, baseURL, apiKeyEnv, serveModel string, bridgePort int, noLaunch, skipPrompt bool) error {
+func startClaude(registryKey, baseURL, apiKeyEnv, serveModel string, bridgePort int, exp exposure, noLaunch, skipPrompt bool) error {
+	listen := netguard.JoinHostPort(exp.host, bridgePort)
+	// Fail closed before doing any work if the bind would be exposed unsafely.
+	if err := netguard.CheckBind(listen, exp.key, exp.allowRemote); err != nil {
+		return err
+	}
 	var err error
 	registryKey, serveModel, err = pickStartModel(registryKey, baseURL, serveModel, apiKeyEnv, skipPrompt)
 	if err != nil {
@@ -73,8 +84,18 @@ func startClaude(registryKey, baseURL, apiKeyEnv, serveModel string, bridgePort 
 	if authToken == "" {
 		authToken = claudeAuthTokenDummy
 	}
+	if exp.key != "" {
+		// Inbound bridge key (RUNHUG_API_KEY / --generate-key) gates the listener.
+		authToken = exp.key
+	}
 
 	heading(os.Stdout, "Start claude")
+	if exp.keyFile != "" {
+		printKV(os.Stdout, "api_key_file", exp.keyFile)
+	}
+	if exp.remote() {
+		fmt.Fprintln(os.Stdout, yellow("warning: bridge exposed on "+listen+"; clients must send Authorization: Bearer <key>"))
+	}
 	printKV(os.Stdout, "openai_upstream", cyan(target.BaseURL))
 	printKV(os.Stdout, "model", bold(target.Model))
 	printKV(os.Stdout, "source", target.Source)
@@ -84,9 +105,9 @@ func startClaude(registryKey, baseURL, apiKeyEnv, serveModel string, bridgePort 
 	fmt.Fprintln(os.Stdout)
 
 	if noLaunch {
-		listenHint := "127.0.0.1:<ephemeral>"
-		if bridgePort > 0 {
-			listenHint = fmt.Sprintf("127.0.0.1:%d", bridgePort)
+		listenHint := listen
+		if bridgePort == 0 {
+			listenHint = strings.TrimSuffix(listen, ":0") + ":<ephemeral>"
 		}
 		bridgeURL := "http://" + listenHint
 		env := buildClaudeEnv(bridgeURL, authToken, target.Model)
@@ -104,16 +125,13 @@ func startClaude(registryKey, baseURL, apiKeyEnv, serveModel string, bridgePort 
 		return nil
 	}
 
-	listen := "127.0.0.1:0"
-	if bridgePort > 0 {
-		listen = fmt.Sprintf("127.0.0.1:%d", bridgePort)
-	}
 	srv, bridgeURL, err := bridge.Start(bridge.Config{
 		UpstreamBase:  target.BaseURL,
 		UpstreamKey:   target.APIKey,
 		DefaultModel:  target.Model,
 		ListenAddr:    listen,
 		ExpectedToken: authToken,
+		AllowRemote:   exp.allowRemote,
 		Sampling:      target.Sampling,
 	})
 	if err != nil {
