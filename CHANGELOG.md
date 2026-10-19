@@ -7,6 +7,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+- Bridge and proxy are loopback-only by default and refuse non-loopback peers. Binding off-localhost now requires `--allow-remote` (or `RUNHUG_ALLOW_REMOTE=1`) and a strong `RUNHUG_API_KEY` / `--generate-key`, sent only as `Authorization: Bearer`; otherwise runhug exits non-zero (#49).
+
 ### Changed
 - `runhug run` starts in fullscreen by default. Use `/mini` to restore scrollback; `/full` returns to the framed view.
 

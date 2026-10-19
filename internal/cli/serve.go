@@ -2,12 +2,15 @@ package cli
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"sort"
+	"strings"
 	"syscall"
 
 	"github.com/adamsiwiec1/runhug/internal/config"
+	"github.com/adamsiwiec1/runhug/internal/netguard"
 	"github.com/adamsiwiec1/runhug/internal/proxy"
 	"github.com/adamsiwiec1/runhug/internal/store"
 )
@@ -15,7 +18,12 @@ import (
 func cmdProxy(args []string) error {
 	fs := newFlagSet("proxy")
 	addr := fs.String("addr", "", "listen address (default from registry or 127.0.0.1:8080)")
+	expFlags := addExposureFlags(fs, "host", "override the bind host of the listen address (non-loopback needs --allow-remote and a key)")
 	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+	exp, err := expFlags.resolve()
+	if err != nil {
 		return err
 	}
 	env := config.Load()
@@ -44,6 +52,18 @@ func cmdProxy(args []string) error {
 	}
 	if listen == "" {
 		listen = "127.0.0.1:8080"
+	}
+	if exp.host != "" {
+		_, port, perr := net.SplitHostPort(listen)
+		if perr != nil {
+			return fmt.Errorf("invalid listen address %q: %w", listen, perr)
+		}
+		listen = net.JoinHostPort(strings.Trim(exp.host, "[]"), port)
+	}
+	// Fail closed: a non-loopback listen (incl. registry "listen" or ":8080")
+	// needs --allow-remote and a strong key.
+	if err := netguard.CheckBind(listen, exp.key, exp.allowRemote); err != nil {
+		return err
 	}
 
 	heading(os.Stdout, "Proxy")
@@ -77,7 +97,7 @@ func cmdProxy(args []string) error {
 
 	h := proxy.New(reg, env.RunpodAPIKey).Handler()
 	errCh := make(chan error, 1)
-	go func() { errCh <- proxy.ListenAndServe(listen, h) }()
+	go func() { errCh <- proxy.ListenAndServeGuarded(listen, h, exp.key, exp.allowRemote) }()
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)

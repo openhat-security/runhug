@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/adamsiwiec1/runhug/internal/hparams"
+	"github.com/adamsiwiec1/runhug/internal/netguard"
 )
 
 // Config for the local Anthropic→OpenAI bridge.
@@ -28,9 +29,13 @@ type Config struct {
 	// ListenAddr e.g. "127.0.0.1:0" or "127.0.0.1:9090".
 	ListenAddr string
 	// ExpectedToken optional; if set, require Bearer or x-api-key to match.
+	// Required (and must be strong) when ListenAddr is not loopback.
 	ExpectedToken string
 	// Sampling fills unset temperature/top_p/max_tokens on translated requests.
 	Sampling *hparams.Sampling
+	// AllowRemote opts in to a non-loopback bind and non-loopback peers.
+	// When false (default) the bridge refuses both.
+	AllowRemote bool
 }
 
 // Server is a local HTTP bridge.
@@ -51,6 +56,9 @@ func Start(cfg Config) (*Server, string, error) {
 	}
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = "127.0.0.1:0"
+	}
+	if err := netguard.CheckBind(cfg.ListenAddr, cfg.ExpectedToken, cfg.AllowRemote); err != nil {
+		return nil, "", fmt.Errorf("bridge: %w", err)
 	}
 	s := &Server{
 		cfg: cfg,
@@ -76,7 +84,7 @@ func Start(cfg Config) (*Server, string, error) {
 		return nil, "", err
 	}
 	s.ln = ln
-	s.http = &http.Server{Handler: mux, ReadHeaderTimeout: 15 * time.Second}
+	s.http = &http.Server{Handler: netguard.Guard(mux, guardKey(cfg), cfg.AllowRemote), ReadHeaderTimeout: 15 * time.Second}
 	go func() { _ = s.http.Serve(ln) }()
 	addr := ln.Addr().String()
 	host, port, err := net.SplitHostPort(addr)
@@ -345,14 +353,8 @@ func (s *Server) authorize(r *http.Request) bool {
 	if want == "" {
 		return true
 	}
-	got := ""
-	if ah := r.Header.Get("Authorization"); strings.HasPrefix(strings.ToLower(ah), "bearer ") {
-		got = strings.TrimSpace(ah[7:])
-	}
-	if got == "" {
-		got = strings.TrimSpace(r.Header.Get("x-api-key"))
-	}
-	return got == want
+	// Header only (Bearer or x-api-key); query parameters are never consulted.
+	return netguard.KeyMatches(netguard.RequestKey(r), want)
 }
 
 type flushWriter struct {
@@ -541,4 +543,14 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// guardKey: on a non-loopback bind every route (not just /v1/messages) requires
+// the key; on loopback the per-route authorize check is unchanged.
+func guardKey(cfg Config) string {
+	host, _, err := net.SplitHostPort(cfg.ListenAddr)
+	if err == nil && netguard.IsLoopbackHost(host) {
+		return ""
+	}
+	return cfg.ExpectedToken
 }
