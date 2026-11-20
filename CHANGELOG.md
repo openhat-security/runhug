@@ -7,6 +7,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-20
+
 ### Changed
 - `runhug run` starts in fullscreen by default. Use `/mini` to restore scrollback; `/full` returns to the framed view.
 - GCP image build and guest-wait status stay on one line. Elapsed time rewrites in place instead of staircasing across the terminal.
