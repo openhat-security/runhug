@@ -510,6 +510,17 @@ func ensureLlamaImage(client *gcp.Client, imgRef string, cfg gcp.ImageConfig, ve
 
 	quiet := promptOK() && !verbose
 	var out io.Writer
+	var line *jobLine
+	var restore func()
+	endJob := func() {
+		if line != nil {
+			line.finish()
+		}
+		if restore != nil {
+			restore()
+			restore = nil
+		}
+	}
 	if quiet {
 		f, err := os.CreateTemp("", "runhug-docker-*.log")
 		if err != nil {
@@ -518,16 +529,27 @@ func ensureLlamaImage(client *gcp.Client, imgRef string, cfg gcp.ImageConfig, ve
 		defer func() { _ = f.Close(); _ = os.Remove(f.Name()) }()
 		log := &quietLog{file: f}
 		out = log
-		restore := startJobKeys(ctx, cancelJob, log)
-		defer restore()
+		line = newJobLine(os.Stderr)
+		restore, _ = startJobKeys(ctx, cancelJob, log, line)
+		defer endJob()
 	}
 
 	started := time.Now()
-	curN, curLabel := 3, "build"
+	curN, curLabel, curDetail := 3, "build", "cuda image"
 	var stepMu sync.Mutex
-	printEnsureStep(os.Stderr, 3, 4, "build", "llama.cpp cuda image  "+jobKeysHint())
+	paint := func() {
+		stepMu.Lock()
+		n, lab, detail := curN, curLabel, curDetail
+		stepMu.Unlock()
+		if line != nil {
+			line.update(formatJobStatus(started, n, 4, lab, detail))
+			return
+		}
+		printEnsureStep(os.Stderr, n, 4, lab, detail)
+	}
+	paint()
 	stopTick := make(chan struct{})
-	if quiet {
+	if line != nil {
 		go func() {
 			t := time.NewTicker(8 * time.Second)
 			defer t.Stop()
@@ -538,10 +560,7 @@ func ensureLlamaImage(client *gcp.Client, imgRef string, cfg gcp.ImageConfig, ve
 				case <-ctx.Done():
 					return
 				case <-t.C:
-					stepMu.Lock()
-					n, lab := curN, curLabel
-					stepMu.Unlock()
-					printJobElapsed(started, n, 4, lab, "working")
+					paint()
 				}
 			}
 		}()
@@ -558,11 +577,12 @@ func ensureLlamaImage(client *gcp.Client, imgRef string, cfg gcp.ImageConfig, ve
 				return
 			}
 			stepMu.Lock()
-			curN, curLabel = 4, "push"
+			curN, curLabel, curDetail = 4, "push", "registry"
 			stepMu.Unlock()
-			printEnsureStep(os.Stderr, 4, 4, "push", imgRef+"  "+jobKeysHint())
+			paint()
 		},
 	})
+	endJob()
 	if err != nil {
 		if ctx.Err() != nil {
 			return fmt.Errorf("cancelled")

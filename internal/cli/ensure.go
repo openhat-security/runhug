@@ -17,6 +17,7 @@ import (
 	"github.com/adamsiwiec1/runhug/internal/runtime"
 	"github.com/adamsiwiec1/runhug/internal/sizing"
 	"github.com/adamsiwiec1/runhug/internal/store"
+	"golang.org/x/term"
 )
 
 // EnsureOpts controls EnsureReady behavior.
@@ -204,7 +205,8 @@ func ensureGCP(ctx context.Context, m store.Model, opts EnsureOpts, w io.Writer)
 
 	timeout := opts.Timeout
 	if timeout <= 0 {
-		timeout = 25 * time.Minute
+		// Room for a zone move (machine image of the boot disk) plus GGUF load.
+		timeout = 45 * time.Minute
 	}
 	cost := gcp.EstimateSpotCost(gcp.GPUTarget{Name: gcp.GPUTypeL4, MachineType: gcp.MachineTypeL4}, 600, false, 0)
 	heading(w, "Ensure")
@@ -259,7 +261,42 @@ func ensureGCP(ctx context.Context, m store.Model, opts EnsureOpts, w io.Writer)
 	case "TERMINATED", "STOPPED", "SUSPENDED":
 		printEnsureStep(w, 1, 4, "instance", yellow(status)+" — sending start…")
 		if err := client.StartInstance(ctx, project, zone, instance); err != nil {
-			return ReadyHandle{Cleanup: cleanup}, fmt.Errorf("gcp start: %w", err)
+			stock, ok := gcp.ParseCapacityStockout(err)
+			if !ok {
+				return ReadyHandle{Cleanup: cleanup}, fmt.Errorf("gcp start: %w", err)
+			}
+			moved := false
+			var lastMove error
+			for _, dest := range stock.Zones {
+				if dest == zone {
+					continue
+				}
+				printEnsureStep(w, 1, 4, "instance", yellow(fmt.Sprintf("%s is out of capacity for this GPU — moving the disk to %s (several minutes)", zone, dest)))
+				res, rerr := client.RelocateStoppedInstance(ctx, project, zone, instance, dest, stock)
+				if rerr != nil {
+					lastMove = rerr
+					if _, again := gcp.ParseCapacityStockout(rerr); again {
+						continue
+					}
+					return ReadyHandle{Cleanup: cleanup}, fmt.Errorf("gcp start: %s has no capacity; move to %s failed: %w", zone, dest, rerr)
+				}
+				zone = res.Zone
+				moved = true
+				if res.Warning != nil {
+					printEnsureStep(w, 1, 4, "instance", yellow(res.Warning.Error()))
+				}
+				if err := rememberGCPZone(m.HFRepo, zone); err != nil {
+					printEnsureStep(w, 1, 4, "instance", yellow("moved, registry zone not saved: "+err.Error()))
+				}
+				printEnsureStep(w, 1, 4, "instance", green("instance now in "+zone))
+				break
+			}
+			if !moved {
+				if lastMove == nil {
+					lastMove = err
+				}
+				return ReadyHandle{Cleanup: cleanup}, fmt.Errorf("gcp start: %w", lastMove)
+			}
 		}
 		printEnsureStep(w, 1, 4, "instance", "start accepted — waiting for RUNNING (Spot boot)…")
 		if _, err := waitGCPInstanceLogged(ctx, client, project, zone, instance, "RUNNING", w); err != nil {
@@ -305,11 +342,7 @@ func ensureGCP(ctx context.Context, m store.Model, opts EnsureOpts, w io.Writer)
 	}
 	if !runtime.PortOpen(localPort) || inspectLocalHTTP(ctx, target.BaseURL, target.APIKey).foreign {
 		printEnsureStep(w, 2, 4, "tunnel", fmt.Sprintf("attempting SSH -L %d:127.0.0.1:%d to %s…", localPort, gcp.ServerPort, instance))
-		th, err := startGCPTunnelLogged(ctx, client, project, zone, instance, localPort, false, w)
-		if err != nil {
-			printEnsureStep(w, 2, 4, "tunnel", yellow("direct SSH failed — attempting IAP tunnel…"))
-			th, err = startGCPTunnelLogged(ctx, client, project, zone, instance, localPort, true, w)
-		}
+		th, err := openGCPTunnel(ctx, client, project, zone, instance, localPort, w)
 		if err != nil {
 			return ReadyHandle{Cleanup: cleanup}, err
 		}
@@ -322,11 +355,7 @@ func ensureGCP(ctx context.Context, m store.Model, opts EnsureOpts, w io.Writer)
 		cleanup()
 		cleanup = func() {}
 		printEnsureStep(w, 2, 4, "tunnel", fmt.Sprintf("reopening SSH -L %d:127.0.0.1:%d…", localPort, gcp.ServerPort))
-		th, err := startGCPTunnelLogged(ctx, client, project, zone, instance, localPort, false, w)
-		if err != nil {
-			printEnsureStep(w, 2, 4, "tunnel", yellow("direct SSH failed — attempting IAP tunnel…"))
-			th, err = startGCPTunnelLogged(ctx, client, project, zone, instance, localPort, true, w)
-		}
+		th, err := openGCPTunnel(ctx, client, project, zone, instance, localPort, w)
 		if err != nil {
 			return err
 		}
@@ -346,8 +375,84 @@ func ensureGCP(ctx context.Context, m store.Model, opts EnsureOpts, w io.Writer)
 	return ReadyHandle{Target: target, Cleanup: cleanup}, nil
 }
 
+func rememberGCPZone(repo, zone string) error {
+	reg, _, err := store.Load()
+	if err != nil {
+		return err
+	}
+	m, ok := reg.Lookup(repo)
+	if !ok {
+		return fmt.Errorf("registry has no %s", repo)
+	}
+	m.EndpointType = zone
+	reg.Put(m)
+	return reg.Save()
+}
+
 func startGCPTunnel(ctx context.Context, client *gcp.Client, project, zone, instance string, localPort int, throughIAP bool) (*gcp.TunnelHandle, error) {
 	return startGCPTunnelLogged(ctx, client, project, zone, instance, localPort, throughIAP, nil)
+}
+
+// gcpSSHBootWait is how long to keep retrying SSH after the VM reports RUNNING.
+// Spot start flips status before guest sshd is listening.
+const gcpSSHBootWait = 3 * time.Minute
+
+func openGCPTunnel(ctx context.Context, client *gcp.Client, project, zone, instance string, localPort int, w io.Writer) (*gcp.TunnelHandle, error) {
+	deadline := time.Now().Add(gcpSSHBootWait)
+	var last error
+	ensuredFW := false
+	for {
+		th, err := startGCPTunnelLogged(ctx, client, project, zone, instance, localPort, false, w)
+		if err != nil {
+			if !ensuredFW {
+				ensuredFW = true
+				_ = client.EnsureIAPFirewall(ctx, project)
+			}
+			if w != nil {
+				printEnsureStep(w, 2, 4, "tunnel", yellow("direct SSH unavailable — trying IAP…"))
+			}
+			th, err = startGCPTunnelLogged(ctx, client, project, zone, instance, localPort, true, w)
+		}
+		if err == nil {
+			return th, nil
+		}
+		last = err
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if !sshNotReadyYet(err) || !time.Now().Before(deadline) {
+			return nil, fmt.Errorf("%w\nHint: the VM can report RUNNING before sshd listens (often about a minute after a Spot start). Retry `runhug start`. If it still fails, firewall runhug-allow-iap must allow tcp:22 from 35.235.240.0/20", last)
+		}
+		if w != nil {
+			printEnsureStep(w, 2, 4, "tunnel", yellow(fmt.Sprintf("guest ssh not up yet — retrying (%s left)", time.Until(deadline).Truncate(time.Second))))
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(8 * time.Second):
+		}
+	}
+}
+
+func sshNotReadyYet(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	for _, n := range []string{
+		"failed to connect to port 22",
+		"connection refused",
+		"connection timed out",
+		"failed to connect to backend",
+		"4003",
+		"timeout waiting for 127.0.0.1",
+		"nothing listening",
+	} {
+		if strings.Contains(s, n) {
+			return true
+		}
+	}
+	return false
 }
 
 func startGCPTunnelLogged(ctx context.Context, client *gcp.Client, project, zone, instance string, localPort int, throughIAP bool, w io.Writer) (*gcp.TunnelHandle, error) {
@@ -370,8 +475,9 @@ func startGCPTunnelLogged(ctx context.Context, client *gcp.Client, project, zone
 		return nil, err
 	}
 	started := time.Now()
-	deadline := started.Add(90 * time.Second)
-	var lastLog time.Time
+	deadline := started.Add(25 * time.Second)
+	live := newStatusLine(w)
+	defer live.commit()
 	for {
 		left := time.Until(deadline)
 		if left <= 0 {
@@ -390,10 +496,7 @@ func startGCPTunnelLogged(ctx context.Context, client *gcp.Client, project, zone
 			th.Stop()
 			return nil, err
 		}
-		if w != nil && time.Since(lastLog) >= 9*time.Second {
-			printEnsureStep(w, 2, 4, "tunnel", fmt.Sprintf("waiting for local %d to open (%s, %s elapsed)…", localPort, via, time.Since(started).Truncate(time.Second)))
-			lastLog = time.Now()
-		}
+		live.update(2, 4, "tunnel", fmt.Sprintf("waiting for local %d to open (%s, %s elapsed)…", localPort, via, time.Since(started).Truncate(time.Second)))
 	}
 }
 
@@ -431,12 +534,55 @@ func waitGCPInstanceLogged(ctx context.Context, client *gcp.Client, project, zon
 	}
 }
 
-func printEnsureStep(w io.Writer, n, total int, label, value string) {
-	fmt.Fprintf(w, "  %s  %s  %s\n",
+// statusLine is one progress row. On a TTY it redraws in place so a poll
+// does not scroll a new copy of the same guest or tunnel line.
+type statusLine struct {
+	w    io.Writer
+	live bool
+	open bool
+}
+
+func newStatusLine(w io.Writer) *statusLine {
+	s := &statusLine{w: w}
+	if f, ok := w.(*os.File); ok {
+		s.live = term.IsTerminal(int(f.Fd()))
+	}
+	return s
+}
+
+func (s *statusLine) update(n, total int, label, value string) {
+	if s == nil || s.w == nil {
+		return
+	}
+	if !s.live {
+		printEnsureStep(s.w, n, total, label, value)
+		return
+	}
+	if s.open {
+		fmt.Fprint(s.w, "\r\033[K")
+	}
+	fmt.Fprint(s.w, formatEnsureStep(n, total, label, value))
+	s.open = true
+}
+
+func (s *statusLine) commit() {
+	if s == nil || !s.open {
+		return
+	}
+	fmt.Fprint(s.w, "\n")
+	s.open = false
+}
+
+func formatEnsureStep(n, total int, label, value string) string {
+	return fmt.Sprintf("  %s  %s  %s",
 		cyan(fmt.Sprintf("%d/%d", n, total)),
 		dim(padRight(label, 10)),
 		value,
 	)
+}
+
+func printEnsureStep(w io.Writer, n, total int, label, value string) {
+	fmt.Fprintln(w, formatEnsureStep(n, total, label, value))
 }
 
 func resolveAPIKey(apiKeyEnv, fallback string) string {
@@ -570,6 +716,8 @@ func waitGCPLlama(ctx context.Context, client *gcp.Client, project, zone, instan
 	guestLine := ""
 	var last error
 	n := 0
+	live := newStatusLine(w)
+	defer live.commit()
 	for time.Now().Before(deadline) {
 		if err := ctx.Err(); err != nil {
 			if last != nil {
@@ -579,6 +727,7 @@ func waitGCPLlama(ctx context.Context, client *gcp.Client, project, zone, instan
 		}
 		n++
 		if err := probeOpenAIModels(ctx, target.BaseURL, target.APIKey); err == nil {
+			live.commit()
 			printEnsureStep(w, step, total, "openai", green(fmt.Sprintf("connected in %s", time.Since(started).Truncate(time.Second))))
 			return nil
 		} else {
@@ -623,7 +772,7 @@ func waitGCPLlama(ctx context.Context, client *gcp.Client, project, zone, instan
 			if detail == "" {
 				detail = formatProbeErr(last)
 			}
-			printEnsureStep(w, step, total, "openai", fmt.Sprintf("%s  elapsed %s", detail, time.Since(started).Truncate(time.Second)))
+			live.update(step, total, "openai", fmt.Sprintf("%s  elapsed %s", detail, time.Since(started).Truncate(time.Second)))
 			lastPrint = time.Now()
 		}
 		select {

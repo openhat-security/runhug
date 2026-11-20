@@ -9,6 +9,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 - `runhug run` starts in fullscreen by default. Use `/mini` to restore scrollback; `/full` returns to the framed view.
+- GCP image build and guest-wait status stay on one line. Elapsed time rewrites in place instead of staircasing across the terminal.
+- `make install` replaces a `~/.local/bin/runhug` symlink instead of following it into the Homebrew cask.
+
+### Fixed
+- After a Spot VM reports RUNNING, `runhug start` retries direct SSH and IAP for about 3 minutes while sshd comes up. Tunnel failures show the port-22 error instead of the gcloud traceback.
+- When the current zone is out of the VM's GPU, start clones the stopped disk into a zone Google lists as available and continues there.
 
 ## [0.4.4] - 2026-10-07
 

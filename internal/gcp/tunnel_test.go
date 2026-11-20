@@ -15,6 +15,7 @@ func TestTunnelArgsDefaultLocalPort(t *testing.T) {
 	for _, want := range []string{
 		"18080:127.0.0.1:8080",
 		"BatchMode=yes",
+		"ConnectTimeout=20",
 		"ExitOnForwardFailure=yes",
 		"StrictHostKeyChecking=accept-new",
 		"--quiet",
@@ -31,6 +32,26 @@ func TestTunnelArgsDefaultLocalPort(t *testing.T) {
 	})
 	if !strings.Contains(strings.Join(iap, " "), "--tunnel-through-iap") {
 		t.Fatalf("missing IAP flag: %v", iap)
+	}
+}
+
+func TestSummarizeTunnelErrDropsTraceback(t *testing.T) {
+	raw := `WARNING:
+
+To increase the performance of the tunnel, consider installing NumPy. For instructions,
+please see https://cloud.google.com/iap/docs/using-tcp-forwarding#increasing_the_tcp_upload_bandwidth
+
+ERROR: [0] Error during local connection to [stdin]: Error while connecting [4003: 'failed to connect to backend']. (Failed to connect to port 22)
+Traceback (most recent call last):
+  File "/opt/homebrew/lib/python3.11/site-packages/googlecloudsdk/core/util/files.py", line 1, in <module>
+    raise SystemExit
+`
+	got := summarizeTunnelErr(raw)
+	if strings.Contains(got, "NumPy") || strings.Contains(got, "Traceback") || strings.Contains(got, "File ") {
+		t.Fatalf("got %q", got)
+	}
+	if !strings.Contains(got, "Failed to connect to port 22") {
+		t.Fatalf("got %q", got)
 	}
 }
 

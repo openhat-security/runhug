@@ -48,6 +48,7 @@ install:
 	first="$$(command -v runhug 2>/dev/null || true)"; \
 	if [ -n "$$first" ] && [ "$$first" != "$$bin" ]; then \
 	  mkdir -p "$$HOME/.local/bin"; \
+	  rm -f "$$HOME/.local/bin/runhug"; \
 	  cp "$$bin" "$$HOME/.local/bin/runhug"; \
 	  echo "→ also $$HOME/.local/bin/runhug (PATH currently hits $$first first)"; \
 	fi

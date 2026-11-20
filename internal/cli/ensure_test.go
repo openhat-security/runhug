@@ -36,6 +36,29 @@ func TestLocalPortFromBaseURL(t *testing.T) {
 	}
 }
 
+func TestSSHNotReadyYet(t *testing.T) {
+	if !sshNotReadyYet(fmt.Errorf("gcp tunnel exited before 127.0.0.1:18080 opened: ERROR: [0] Error during local connection to [stdin]: Error while connecting [4003: 'failed to connect to backend']. (Failed to connect to port 22)")) {
+		t.Fatal("port 22")
+	}
+	if sshNotReadyYet(fmt.Errorf("permission denied (publickey)")) {
+		t.Fatal("auth failure is not a boot wait")
+	}
+	if sshNotReadyYet(nil) {
+		t.Fatal("nil")
+	}
+}
+
+func TestStatusLineNonTTYPrintsEachUpdate(t *testing.T) {
+	var b strings.Builder
+	s := newStatusLine(&b)
+	s.update(3, 4, "openai", "guest: docker not installed yet  elapsed 2s")
+	s.update(3, 4, "openai", "guest: docker not installed yet  elapsed 15s")
+	s.commit()
+	if strings.Count(b.String(), "\n") != 2 {
+		t.Fatalf("non-tty should keep each poll: %q", b.String())
+	}
+}
+
 func TestPrintEnsureStep(t *testing.T) {
 	var buf strings.Builder
 	printEnsureStep(&buf, 2, 4, "tunnel", "127.0.0.1:18080")

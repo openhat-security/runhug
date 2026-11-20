@@ -57,6 +57,7 @@ func TunnelArgs(o TunnelOpts) []string {
 		"-N",
 		"-L", fwd,
 		"-o", "BatchMode=yes",
+		"-o", "ConnectTimeout=20",
 		"-o", "ExitOnForwardFailure=yes",
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "ServerAliveInterval=30",
@@ -208,11 +209,35 @@ func (h *TunnelHandle) WaitLocal(ctx context.Context, d time.Duration) error {
 }
 
 func truncateTunnelErr(s string) string {
-	s = strings.TrimSpace(s)
-	if len(s) <= 400 {
+	s = summarizeTunnelErr(s)
+	if len(s) <= 280 {
 		return s
 	}
-	return s[:400] + "…"
+	return s[:280] + "…"
+}
+
+// summarizeTunnelErr keeps gcloud's ERROR line and drops the NumPy warning
+// and Python traceback that IAP prints ahead of it.
+func summarizeTunnelErr(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	var kept []string
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "WARNING:") || strings.HasPrefix(line, "Traceback") || strings.HasPrefix(line, "File ") || strings.HasPrefix(line, "To increase the performance") {
+			continue
+		}
+		low := strings.ToLower(line)
+		if strings.Contains(low, "error:") || strings.Contains(low, "failed to connect") || strings.Contains(low, "connection refused") || strings.Contains(low, "connection timed out") || strings.Contains(low, "permission denied") {
+			kept = append(kept, line)
+		}
+	}
+	if len(kept) == 0 {
+		return strings.Join(strings.Fields(s), " ")
+	}
+	return strings.Join(kept, " ")
 }
 
 func tunnelBinary(c *Client) string {
